@@ -1,7 +1,7 @@
 import Foundation
 
-/// Model architecture config — supports both flat HF format and nested format
-/// (where fields live under `text_config`, e.g. Gemma 4 multimodal models).
+/// Model architecture config — supports both flat HF format and nested Qwen3.5 format
+/// (where fields live under `text_config`).
 public struct HFConfig: Sendable {
     public let hiddenSize: Int
     public let numHiddenLayers: Int
@@ -49,7 +49,7 @@ extension HFConfig: Codable {
         }
     }
 
-    // Wrapper for nested format (Gemma 4 multimodal, Qwen3.5, etc.)
+    // Wrapper for nested Qwen3.5 format
     private struct Nested: Codable {
         let textConfig: Flat?
         enum CodingKeys: String, CodingKey {
@@ -86,12 +86,12 @@ extension HFConfig: Codable {
             ))
         }
 
-        self.hiddenSize = tc.hiddenSize ?? 2816
-        self.numHiddenLayers = tc.numHiddenLayers ?? 30
+        self.hiddenSize = tc.hiddenSize ?? 2048
+        self.numHiddenLayers = tc.numHiddenLayers ?? 40
         self.numAttentionHeads = tc.numAttentionHeads ?? 16
-        self.numKeyValueHeads = tc.numKeyValueHeads ?? 8
+        self.numKeyValueHeads = tc.numKeyValueHeads ?? 2
         self.headDim = tc.headDim
-        self.vocabSize = tc.vocabSize ?? 262144
+        self.vocabSize = tc.vocabSize ?? 248320
         self.numExperts = tc.numExperts
         self.numExpertsPerTok = tc.numExpertsPerTok
         self.moeIntermediateSize = tc.moeIntermediateSize

@@ -31,9 +31,9 @@ public struct ModelManifest: Sendable {
         if let types = hfConfig.layerTypes, types.count == hfConfig.numHiddenLayers {
             return types
         }
-        // 3. Default: every 6th layer is full_attn (matches Gemma 4 sliding-window pattern)
+        // 3. Default: every 4th layer is full_attn
         return (0..<hfConfig.numHiddenLayers).map { i in
-            i % 6 == 5 ? "full_attn" : "gdn"
+            i % 4 == 3 ? "full_attn" : "gdn"
         }
     }
 }
