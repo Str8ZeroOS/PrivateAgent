@@ -46,6 +46,12 @@ final class ChatViewModel {
         guard !inputText.isEmpty, !isGenerating else { return }
         guard let conversation else { return }
 
+        // Optional cloud backend (NVIDIA). Skips the on-device engine entirely.
+        if CloudSettings.isActive {
+            sendCloudMessage(conversation: conversation)
+            return
+        }
+
         // Auto-load model if engine isn't ready
         if engine.state == .idle {
             print("[CHAT] Engine idle, auto-loading model...")
@@ -240,6 +246,89 @@ final class ChatViewModel {
             self.streamingText = ""
             _ = inThinking  // suppress unused warning
         }
+    }
+
+    /// Sends the turn to NVIDIA's cloud API instead of the on-device engine.
+    private func sendCloudMessage(conversation: Conversation) {
+        guard let key = CloudSettings.apiKey, !key.isEmpty else {
+            currentStats = "Cloud is on but no API key is saved. Add one in Settings."
+            return
+        }
+        let text = inputText
+        inputText = ""
+
+        // History before this turn, then the new user message.
+        let prior = sortedMessages.filter { !$0.content.isEmpty }
+        var wire: [CloudMessage] = []
+        let sys = Self.cloudSystemPrompt(conversation.systemPrompt)
+        if !sys.isEmpty { wire.append(CloudMessage(role: "system", content: sys)) }
+        for m in prior {
+            wire.append(CloudMessage(role: m.role == .user ? "user" : "assistant", content: m.content))
+        }
+        wire.append(CloudMessage(role: "user", content: text))
+
+        let userMessage = Message(role: .user, content: text, ordinal: conversation.messages.count)
+        userMessage.conversation = conversation
+        modelContext.insert(userMessage)
+        if conversation.title == "New Chat" {
+            conversation.title = String(text.prefix(50))
+        }
+        let assistantMessage = Message(role: .assistant, content: "", ordinal: conversation.messages.count)
+        assistantMessage.conversation = conversation
+        modelContext.insert(assistantMessage)
+        try? modelContext.save()
+
+        isGenerating = true
+        streamingText = ""
+        let model = CloudSettings.model
+        currentStats = "Cloud: \(model)"
+        lastBatchTime = Date()
+
+        let temp = UserDefaults.standard.object(forKey: "temperature") as? Double ?? 0.7
+        let maxTok = Int(UserDefaults.standard.object(forKey: "maxTokens") as? Double ?? 2048)
+        let stream = NVIDIAClient.stream(messages: wire, model: model, apiKey: key, temperature: temp, maxTokens: maxTok)
+
+        generationTask = Task { [weak self] in
+            guard let self else { return }
+            var accumulated = ""
+            let start = Date()
+            var chunks = 0
+            do {
+                for try await piece in stream {
+                    guard !Task.isCancelled else { break }
+                    accumulated += piece
+                    chunks += 1
+                    self.streamingText = accumulated
+                    let now = Date()
+                    if now.timeIntervalSince(self.lastBatchTime) >= 0.5 {
+                        assistantMessage.content = accumulated
+                        self.lastBatchTime = now
+                    }
+                }
+            } catch {
+                assistantMessage.content = accumulated.isEmpty
+                    ? "Error: \(error.localizedDescription)"
+                    : accumulated + "\n\n[Error: \(error.localizedDescription)]"
+                try? self.modelContext.save()
+            }
+            if assistantMessage.content != accumulated && !accumulated.isEmpty {
+                assistantMessage.content = accumulated
+            }
+            conversation.updatedAt = Date()
+            try? self.modelContext.save()
+            let secs = Date().timeIntervalSince(start)
+            self.currentStats = String(format: "Cloud | %@ | %.1fs", model, secs)
+            self.isGenerating = false
+            self.streamingText = ""
+        }
+    }
+
+    /// Qwen-only control lines (like /no_think) are meaningless to cloud models.
+    private static func cloudSystemPrompt(_ s: String) -> String {
+        s.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { $0.trimmingCharacters(in: .whitespaces) != "/no_think" }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Mark KV cache as stale — next send will do a full generate.

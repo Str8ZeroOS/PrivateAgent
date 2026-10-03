@@ -4,6 +4,10 @@ struct SettingsView: View {
     @AppStorage("maxTokens") private var maxTokens: Double = 2048
     @AppStorage("temperature") private var temperature: Double = 0.7
     @AppStorage("defaultSystemPrompt") private var systemPrompt: String = "You are a helpful assistant."
+    @AppStorage(CloudSettings.enabledKey) private var cloudEnabled: Bool = false
+    @AppStorage(CloudSettings.modelKey) private var cloudModel: String = CloudSettings.defaultModel
+    @State private var apiKeyDraft: String = ""
+    @State private var keySaved: Bool = CloudSettings.apiKey != nil
 
     var body: some View {
         Form {
@@ -20,6 +24,35 @@ struct SettingsView: View {
             Section("System Prompt") {
                 TextEditor(text: $systemPrompt)
                     .frame(minHeight: 80)
+            }
+            Section {
+                Toggle("Use NVIDIA cloud", isOn: $cloudEnabled)
+                SecureField("NVIDIA API key (nvapi-...)", text: $apiKeyDraft)
+                    .autocorrectionDisabled()
+                Button("Save key") {
+                    CloudSettings.setAPIKey(apiKeyDraft)
+                    keySaved = !apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty
+                    apiKeyDraft = ""
+                }
+                .disabled(apiKeyDraft.isEmpty)
+                TextField("Model", text: $cloudModel)
+                    .autocorrectionDisabled()
+                #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                #endif
+                if keySaved {
+                    Text("A key is saved in the Keychain.")
+                        .foregroundStyle(.secondary)
+                    Button("Remove saved key", role: .destructive) {
+                        CloudSettings.setAPIKey("")
+                        keySaved = false
+                        cloudEnabled = false
+                    }
+                }
+            } header: {
+                Text("Cloud (NVIDIA)")
+            } footer: {
+                Text("When on, your messages are sent to NVIDIA's servers. Turn it off to stay fully offline.")
             }
             Section("About") {
                 LabeledContent("Version", value: "0.1.0")

@@ -1,0 +1,142 @@
+import Foundation
+import Security
+
+/// Settings for the optional NVIDIA cloud backend.
+/// The API key is stored in the Keychain only. It is never written to source,
+/// UserDefaults, or logs.
+enum CloudSettings {
+    static let enabledKey = "cloudEnabled"
+    static let modelKey = "cloudModel"
+    static let defaultModel = "nvidia/nemotron-3-super-120b-a12b"
+
+    private static let service = "privateagent.nvidia.apikey"
+    private static let account = "default"
+
+    static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+
+    static var model: String {
+        let m = UserDefaults.standard.string(forKey: modelKey) ?? ""
+        return m.trimmingCharacters(in: .whitespaces).isEmpty ? defaultModel : m.trimmingCharacters(in: .whitespaces)
+    }
+
+    static var isActive: Bool { isEnabled && !(apiKey ?? "").isEmpty }
+
+    private static func baseQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+
+    static var apiKey: String? {
+        var q = baseQuery()
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Saves the key (empty string removes it).
+    static func setAPIKey(_ key: String) {
+        SecItemDelete(baseQuery() as CFDictionary)
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var add = baseQuery()
+        add[kSecValueData as String] = Data(trimmed.utf8)
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        SecItemAdd(add as CFDictionary, nil)
+    }
+}
+
+struct CloudMessage: Sendable {
+    let role: String
+    let content: String
+}
+
+enum CloudError: LocalizedError, Sendable {
+    case badResponse
+    case http(Int, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .badResponse:
+            return "NVIDIA cloud: unexpected response."
+        case .http(let code, let body):
+            switch code {
+            case 401, 403: return "NVIDIA cloud: key rejected (HTTP \(code)). Check the API key in Settings."
+            case 404: return "NVIDIA cloud: model not found (HTTP 404). Check the model name in Settings."
+            case 429: return "NVIDIA cloud: rate limit reached (HTTP 429). Wait a moment and retry."
+            default: return "NVIDIA cloud error (HTTP \(code)). \(body)"
+            }
+        }
+    }
+}
+
+/// Minimal streaming client for NVIDIA's OpenAI-compatible endpoint.
+enum NVIDIAClient {
+    static let endpoint = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+    static func stream(
+        messages: [CloudMessage],
+        model: String,
+        apiKey: String,
+        temperature: Double,
+        maxTokens: Int
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    guard let url = URL(string: endpoint) else { throw CloudError.badResponse }
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.timeoutInterval = 300
+                    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+
+                    var wire: [[String: String]] = []
+                    for m in messages { wire.append(["role": m.role, "content": m.content]) }
+                    let body: [String: Any] = [
+                        "model": model,
+                        "messages": wire,
+                        "temperature": temperature,
+                        "max_tokens": maxTokens,
+                        "stream": true
+                    ]
+                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse else { throw CloudError.badResponse }
+                    guard (200...299).contains(http.statusCode) else {
+                        var text = ""
+                        for try await line in bytes.lines {
+                            text += line
+                            if text.count > 300 { break }
+                        }
+                        throw CloudError.http(http.statusCode, text)
+                    }
+
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:") else { continue }
+                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        if payload == "[DONE]" { break }
+                        guard let data = payload.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let choices = obj["choices"] as? [[String: Any]],
+                              let delta = choices.first?["delta"] as? [String: Any],
+                              let piece = delta["content"] as? String,
+                              !piece.isEmpty else { continue }
+                        continuation.yield(piece)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
