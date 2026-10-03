@@ -253,7 +253,8 @@ int flashmoe_load(FlashMoEContext *ctx, const FlashMoEConfig *config) {
         // ---- Load weights ----
         ctx->wf = open_weights(weights_path, manifest_path);
         if (!ctx->wf) {
-            snprintf(ctx->last_error, sizeof(ctx->last_error), "Failed to load weights from %s", weights_path);
+            snprintf(ctx->last_error, sizeof(ctx->last_error), "Failed to load weights [%s] from %s", g_weights_err, weights_path);
+            NSLog(@"[FlashMoE] weights load failed: %s", g_weights_err);
             return -1;
         }
 

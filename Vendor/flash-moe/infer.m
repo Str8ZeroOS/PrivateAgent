@@ -1087,11 +1087,14 @@ typedef struct {
     int capacity;
 } TensorManifest;
 
+static char g_weights_err[256] = "";
+
 static TensorManifest *load_manifest(const char *json_path) {
     @autoreleasepool {
         NSData *data = [NSData dataWithContentsOfFile:
             [NSString stringWithUTF8String:json_path]];
         if (!data) {
+            snprintf(g_weights_err, sizeof(g_weights_err), "cannot read model_weights.json");
             fprintf(stderr, "ERROR: Cannot read %s\n", json_path);
             return NULL;
         }
@@ -1101,6 +1104,7 @@ static TensorManifest *load_manifest(const char *json_path) {
                                                              options:0
                                                                error:&error];
         if (!root) {
+            snprintf(g_weights_err, sizeof(g_weights_err), "manifest JSON parse failed");
             fprintf(stderr, "ERROR: JSON parse failed: %s\n",
                     [[error localizedDescription] UTF8String]);
             return NULL;
@@ -1108,6 +1112,7 @@ static TensorManifest *load_manifest(const char *json_path) {
 
         NSDictionary *tensors = root[@"tensors"];
         if (!tensors) {
+            snprintf(g_weights_err, sizeof(g_weights_err), "manifest has no tensors key");
             fprintf(stderr, "ERROR: No 'tensors' key in manifest\n");
             return NULL;
         }
@@ -1344,6 +1349,7 @@ static WeightFile *open_weights(const char *bin_path, const char *json_path) {
     // mmap the binary file
     int fd = open(bin_path, O_RDONLY);
     if (fd < 0) {
+        snprintf(g_weights_err, sizeof(g_weights_err), "open failed: %s (errno %d)", strerror(errno), errno);
         fprintf(stderr, "ERROR: Cannot open %s: %s\n", bin_path, strerror(errno));
         return NULL;
     }
@@ -1355,6 +1361,7 @@ static WeightFile *open_weights(const char *bin_path, const char *json_path) {
     void *data = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
     if (data == MAP_FAILED) {
+        snprintf(g_weights_err, sizeof(g_weights_err), "mmap failed: %s (errno %d), file %zu bytes", strerror(errno), errno, size);
         fprintf(stderr, "ERROR: mmap failed: %s\n", strerror(errno));
         return NULL;
     }
