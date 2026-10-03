@@ -8,6 +8,7 @@ struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: ChatViewModel?
     @State private var showSystemPrompt = false
+    @State private var keyDraft: String = ""
 
     var body: some View {
         Group {
@@ -30,6 +31,14 @@ struct ChatView: View {
     }
 
     @ViewBuilder
+    private func saveCloudKey() {
+        let k = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        keyDraft = ""
+        guard !k.isEmpty else { return }
+        CloudSettings.setAPIKey(k)
+        UserDefaults.standard.set(true, forKey: CloudSettings.enabledKey)
+    }
+
     private func chatContent(viewModel: ChatViewModel) -> some View {
         VStack(spacing: 0) {
             // Messages
@@ -139,6 +148,13 @@ struct ChatView: View {
                 }
             }
             #endif
+        }
+        .alert("NVIDIA API key", isPresented: Bindable(viewModel).needsCloudKey) {
+            SecureField("nvapi-...", text: $keyDraft)
+            Button("Save") { saveCloudKey() }
+            Button("Cancel", role: .cancel) { keyDraft = "" }
+        } message: {
+            Text("Cloud chat needs a valid key. Paste it here. It is stored in this iPhone's Keychain only.")
         }
         .sheet(isPresented: $showSystemPrompt) {
             SystemPromptSheet(conversation: viewModel.conversation) {

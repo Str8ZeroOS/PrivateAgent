@@ -16,6 +16,8 @@ final class ChatViewModel {
     var isGenerating: Bool = false
     var streamingText: String = ""
     var currentStats: String = ""
+    /// True when cloud chat needs an API key (missing or rejected). The chat screen shows a prompt.
+    var needsCloudKey: Bool = false
 
     private(set) var conversation: Conversation?
     private var generationTask: Task<Void, Never>?
@@ -48,6 +50,10 @@ final class ChatViewModel {
 
         // Optional cloud backend (NVIDIA). Skips the on-device engine entirely.
         _ = CloudSettings.importKeyFromDocuments()
+        if CloudSettings.isEnabled && CloudSettings.apiKey == nil {
+            needsCloudKey = true
+            return
+        }
         if CloudSettings.isActive {
             sendCloudMessage(conversation: conversation)
             return
@@ -231,6 +237,9 @@ final class ChatViewModel {
                     }
                 }
             } catch {
+                if let ce = error as? CloudError, case .http(let code, _) = ce, code == 401 || code == 403 {
+                    self.needsCloudKey = true
+                }
                 assistantMessage.content = accumulated.isEmpty
                     ? "Error: \(error.localizedDescription)"
                     : accumulated + "\n\n[Error: \(error.localizedDescription)]"
