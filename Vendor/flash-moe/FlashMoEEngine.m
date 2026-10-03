@@ -387,6 +387,31 @@ int flashmoe_load(FlashMoEContext *ctx, const FlashMoEConfig *config) {
         // ---- Build layer cache (precomputes weight pointers) ----
         build_layer_cache(ctx->wf);
 
+        // ---- Expert RAM cache (sized by caller; cliff-guarded) ----
+        // Below one full token cycle an LRU cache hits exactly 0% (the layer
+        // order is cyclic, so LRU evicts what is needed soonest). Refuse such
+        // budgets instead of burning RAM on a cache that cannot help.
+        if (g_malloc_cache) { malloc_cache_free(g_malloc_cache); g_malloc_cache = NULL; }
+        if (config->expert_cache_mb > 0 && g_metal) {
+            uint64_t esz = (uint64_t)active_expert_size();
+            uint64_t budget = (uint64_t)config->expert_cache_mb * 1024ULL * 1024ULL;
+            uint64_t cycle = (uint64_t)g_cfg.num_layers * (uint64_t)ctx->K * esz;
+            uint64_t all_experts = (uint64_t)g_cfg.num_layers * (uint64_t)g_cfg.num_experts;
+            if (esz == 0) {
+                NSLog(@"[FlashMoE] expert cache skipped: unknown expert size");
+            } else if (budget < cycle) {
+                NSLog(@"[FlashMoE] expert cache skipped: budget %llu MiB < token cycle %llu MiB (would hit 0%%)",
+                      (unsigned long long)(budget >> 20), (unsigned long long)(cycle >> 20));
+            } else {
+                uint64_t n = budget / esz;
+                if (n > all_experts) n = all_experts;
+                g_malloc_cache = malloc_cache_init((int)n, g_metal->device);
+                NSLog(@"[FlashMoE] expert cache on: %d entries, budget %llu MiB, cycle %llu MiB",
+                      g_malloc_cache ? g_malloc_cache->num_entries : 0,
+                      (unsigned long long)(budget >> 20), (unsigned long long)(cycle >> 20));
+            }
+        }
+
         ctx->loaded = 1;
         if (config->verbose) {
             NSLog(@"[FlashMoE] Model loaded: %d layers, %d experts (K=%d), hidden=%d",
@@ -410,6 +435,13 @@ void flashmoe_unload(FlashMoEContext *ctx) {
 
         // Reset async pread state
         g_async_pread.active = 0;
+
+        if (g_malloc_cache) {
+            NSLog(@"[FlashMoE] expert cache final: %llu hits, %llu misses",
+                  (unsigned long long)g_malloc_cache->hits, (unsigned long long)g_malloc_cache->misses);
+            malloc_cache_free(g_malloc_cache);
+            g_malloc_cache = NULL;
+        }
 
         // Shutdown I/O pool
         io_pool_shutdown();
@@ -1483,6 +1515,14 @@ int flashmoe_validate_model(const char *model_path) {
 
     if (!has_4bit && !has_tiered && !has_2bit) return -1;
 
+    return 0;
+}
+
+int flashmoe_get_cache_stats(unsigned long long *hits, unsigned long long *misses, int *entries) {
+    if (!g_malloc_cache) return -1;
+    if (hits) *hits = (unsigned long long)g_malloc_cache->hits;
+    if (misses) *misses = (unsigned long long)g_malloc_cache->misses;
+    if (entries) *entries = g_malloc_cache->num_entries;
     return 0;
 }
 

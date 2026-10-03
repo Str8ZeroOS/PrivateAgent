@@ -47,6 +47,7 @@ typedef struct {
     float temperature;          // Sampling temperature (0 = greedy, default 0.7)
     float top_p;                // Nucleus sampling threshold (default 0.9)
     int top_k;                  // Top-k sampling (0 = disabled, default 20)
+    int expert_cache_mb;        // RAM expert cache budget in MiB (0 = off). Engine refuses a budget below one token cycle (layers*K*expert_size).
 } FlashMoEConfig;
 
 // ---- Engine stats ----
@@ -162,6 +163,9 @@ void flashmoe_set_expert_prefetch(int enabled);   // async parallel pread
 // Check if a model directory is valid (has config.json, packed_experts/, etc.)
 // Returns 0 if valid, -1 if not.
 int flashmoe_validate_model(const char *model_path);
+
+// Expert cache telemetry. Returns 0 if a cache is active, -1 if disabled.
+int flashmoe_get_cache_stats(unsigned long long *hits, unsigned long long *misses, int *entries);
 
 // Get the current turn count (0 = no history, >0 = can use continuation).
 int flashmoe_turn_count(FlashMoEContext *ctx);

@@ -110,6 +110,17 @@ int pa_session_load_model(PA_Session *session, const PA_ModelDesc *desc, uint64_
     fmConfig.prefill_skip_experts = 0;
     fmConfig.verbose = 0;
 
+    // Expert RAM cache: whatever is left after resident working set and a
+    // safety reserve, capped. The engine rejects budgets below one token cycle.
+    {
+        uint64_t reserve = 384ULL * 1024 * 1024;
+        uint64_t ceiling = 1536ULL * 1024 * 1024;
+        uint64_t used = session->memory_budget.total_resident_bytes + reserve;
+        uint64_t cache_bytes = available_memory > used ? available_memory - used : 0;
+        if (cache_bytes > ceiling) cache_bytes = ceiling;
+        fmConfig.expert_cache_mb = (int)(cache_bytes >> 20);
+    }
+
     int loadResult = flashmoe_load(ctx, &fmConfig);
     if (loadResult != 0) {
         snprintf(session->last_error, sizeof(session->last_error),

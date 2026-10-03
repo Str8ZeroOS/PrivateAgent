@@ -1,0 +1,97 @@
+name: build-signed-ipa
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select newest stable Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+      - name: Install signing assets
+        env:
+          P12_BASE64: ${{ secrets.P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.PROFILE_BASE64 }}
+        run: |
+          set -e
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dev.p12"
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/dev.mobileprovision"
+          KCP="$RUNNER_TEMP/build.keychain-db"
+          KCPW=$(uuidgen)
+          security create-keychain -p "$KCPW" "$KCP"
+          security set-keychain-settings -lut 21600 "$KCP"
+          security unlock-keychain -p "$KCPW" "$KCP"
+          security import "$RUNNER_TEMP/dev.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KCP"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KCPW" "$KCP"
+          security list-keychains -d user -s "$KCP"
+          security find-identity -v -p codesigning "$KCP"
+          security cms -D -i "$RUNNER_TEMP/dev.mobileprovision" > "$RUNNER_TEMP/p.plist"
+          PB=/usr/libexec/PlistBuddy
+          UUID=$($PB -c "Print UUID" "$RUNNER_TEMP/p.plist")
+          NAME=$($PB -c "Print Name" "$RUNNER_TEMP/p.plist")
+          TEAM=$($PB -c "Print TeamIdentifier:0" "$RUNNER_TEMP/p.plist")
+          APPID=$($PB -c "Print Entitlements:application-identifier" "$RUNNER_TEMP/p.plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/dev.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "TEAM_ID=$TEAM" >> "$GITHUB_ENV"
+          echo "BUNDLE_ID=${APPID#*.}" >> "$GITHUB_ENV"
+          echo "Profile: $NAME  Team: $TEAM  Bundle: ${APPID#*.}"
+          $PB -c "Print Entitlements" "$RUNNER_TEMP/p.plist" | grep -i "memory" || echo "WARNING: profile has no increased-memory-limit entitlement"
+      - name: Patch project.yml for signing and memory entitlement
+        run: |
+          ruby -ryaml -e '
+          d = YAML.load_file("project.yml")
+          t = d["targets"]["PrivateAgentApp"]
+          t["entitlements"] = { "path" => "Apps/PrivateAgentiOS/PrivateAgent.entitlements", "properties" => { "com.apple.developer.kernel.increased-memory-limit" => true } }
+          t["settings"]["base"].merge!({
+            "CODE_SIGN_STYLE" => "Manual",
+            "DEVELOPMENT_TEAM" => ENV["TEAM_ID"],
+            "PROVISIONING_PROFILE_SPECIFIER" => ENV["PROFILE_NAME"],
+            "CODE_SIGN_IDENTITY" => "Apple Development",
+            "PRODUCT_BUNDLE_IDENTIFIER" => ENV["BUNDLE_ID"]
+          })
+          File.write("project.yml", d.to_yaml)
+          '
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Archive
+        run: |
+          PROJ=$(find . -name "*.xcodeproj" -not -path "*/Vendor/*" | head -1)
+          xcodebuild -list -project "$PROJ"
+          SCHEME=$(xcodebuild -list -json -project "$PROJ" | python3 -c "import sys,json; s=json.load(sys.stdin)['project']['schemes']; print('PrivateAgentApp' if 'PrivateAgentApp' in s else s[0])")
+          echo "Scheme: $SCHEME"
+          xcodebuild archive -project "$PROJ" -scheme "$SCHEME" -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/pa.xcarchive"
+      - name: Export ipa
+        run: |
+          python3 - <<'PY'
+          import os, plistlib
+          p = {
+            "method": "development",
+            "teamID": os.environ["TEAM_ID"],
+            "signingStyle": "manual",
+            "signingCertificate": "Apple Development",
+            "provisioningProfiles": {os.environ["BUNDLE_ID"]: os.environ["PROFILE_NAME"]},
+          }
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "export.plist"), "wb") as f:
+            plistlib.dump(p, f)
+          PY
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/pa.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath "$RUNNER_TEMP/export"
+          mkdir -p out
+          cp "$RUNNER_TEMP"/export/*.ipa out/PrivateAgent-signed.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PrivateAgent-signed-ipa
+          path: out/PrivateAgent-signed.ipa
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true

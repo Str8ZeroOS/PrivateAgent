@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 import FlashMoECore
 import FlashMoERuntime
 import ModelPack
@@ -165,7 +166,7 @@ public final class PrivateAgentEngine {
                     }
                 }
 
-                let mem = availableMemory > 0 ? availableMemory : 6 * 1024 * 1024 * 1024
+                let mem = availableMemory > 0 ? availableMemory : paDefaultAvailableMemory()
 
                 var mutableDesc = desc
                 let result = pa_session_load_model(s, &mutableDesc, mem)
@@ -443,4 +444,14 @@ public final class PrivateAgentEngine {
         if case .error = state { return true }
         return false
     }
+}
+
+/// Real per-process headroom on iOS (jetsam limit minus current use);
+/// 6 GB fallback only for macOS dev builds.
+private func paDefaultAvailableMemory() -> UInt64 {
+    #if os(iOS)
+    return UInt64(os_proc_available_memory())
+    #else
+    return 6 * 1024 * 1024 * 1024
+    #endif
 }
