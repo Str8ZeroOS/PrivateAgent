@@ -60,5 +60,9 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .onAppear {
+            if CloudSettings.importKeyFromDocuments() { cloudEnabled = true }
+            keySaved = CloudSettings.apiKey != nil
+        }
     }
 }

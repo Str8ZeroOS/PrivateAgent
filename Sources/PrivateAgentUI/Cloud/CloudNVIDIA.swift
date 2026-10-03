@@ -39,6 +39,22 @@ enum CloudSettings {
         return String(data: data, encoding: .utf8)
     }
 
+    /// One-time import. If Documents/nvidia_api_key.txt exists (copied over USB by
+    /// push-nvidia-key.py), save it to the Keychain, delete the file, enable cloud.
+    @discardableResult
+    static func importKeyFromDocuments() -> Bool {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return false }
+        let file = docs.appendingPathComponent("nvidia_api_key.txt")
+        guard let data = try? Data(contentsOf: file),
+              let raw = String(data: data, encoding: .utf8) else { return false }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        try? FileManager.default.removeItem(at: file)
+        guard key.hasPrefix("nvapi-"), key.count > 20 else { return false }
+        setAPIKey(key)
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        return true
+    }
+
     /// Saves the key (empty string removes it).
     static func setAPIKey(_ key: String) {
         SecItemDelete(baseQuery() as CFDictionary)

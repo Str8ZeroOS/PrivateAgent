@@ -47,6 +47,7 @@ final class ChatViewModel {
         guard let conversation else { return }
 
         // Optional cloud backend (NVIDIA). Skips the on-device engine entirely.
+        _ = CloudSettings.importKeyFromDocuments()
         if CloudSettings.isActive {
             sendCloudMessage(conversation: conversation)
             return
