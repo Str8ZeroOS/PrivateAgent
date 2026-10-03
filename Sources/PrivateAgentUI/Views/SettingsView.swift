@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(CloudSettings.modelKey) private var cloudModel: String = CloudSettings.defaultModel
     @State private var apiKeyDraft: String = ""
     @State private var keySaved: Bool = CloudSettings.apiKey != nil
+    @State private var testResult: String = ""
 
     var body: some View {
         Form {
@@ -43,6 +44,20 @@ struct SettingsView: View {
                 if keySaved {
                     Text("A key is saved in the Keychain.")
                         .foregroundStyle(.secondary)
+                    Text("Key fingerprint: \(CloudSettings.fingerprint ?? "none")")
+                        .font(.footnote.monospaced())
+                    Button("Test key now") {
+                        testResult = "Testing..."
+                        let m = CloudSettings.model
+                        let k = CloudSettings.apiKey ?? ""
+                        Task {
+                            let r = await NVIDIAClient.ping(model: m, apiKey: k)
+                            testResult = "\(m): \(r)"
+                        }
+                    }
+                    if !testResult.isEmpty {
+                        Text(testResult).font(.footnote)
+                    }
                     Button("Remove saved key", role: .destructive) {
                         CloudSettings.setAPIKey("")
                         keySaved = false

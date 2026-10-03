@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import CryptoKit
 
 /// Settings for the optional NVIDIA cloud backend.
 /// The API key is stored in the Keychain only. It is never written to source,
@@ -55,6 +56,14 @@ enum CloudSettings {
         return true
     }
 
+    /// Short, non-reversible code (first 4 bytes of SHA-256, as 8 hex chars) so you can
+    /// confirm the PC and the iPhone hold the same key without showing the key.
+    static var fingerprint: String? {
+        guard let k = apiKey, !k.isEmpty else { return nil }
+        let digest = SHA256.hash(data: Data(k.utf8))
+        return digest.prefix(4).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Saves the key (empty string removes it).
     static func setAPIKey(_ key: String) {
         SecItemDelete(baseQuery() as CFDictionary)
@@ -87,6 +96,33 @@ enum CloudError: LocalizedError, Sendable {
             case 429: return "NVIDIA cloud: rate limit reached (HTTP 429). Wait a moment and retry."
             default: return "NVIDIA cloud error (HTTP \(code)). \(body)"
             }
+        }
+    }
+}
+
+extension NVIDIAClient {
+    /// One tiny non-streaming request. Returns a short status string for the Settings screen.
+    static func ping(model: String, apiKey: String) async -> String {
+        guard let url = URL(string: endpoint) else { return "Bad URL" }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 60
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [["role": "user", "content": "Say hi"]],
+            "max_tokens": 16,
+            "stream": false
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return "Encode error" }
+        req.httpBody = data
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse else { return "No response" }
+            return http.statusCode == 200 ? "OK (HTTP 200)" : "HTTP \(http.statusCode)"
+        } catch {
+            return "Network error: \(error.localizedDescription)"
         }
     }
 }
