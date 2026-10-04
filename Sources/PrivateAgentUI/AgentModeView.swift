@@ -36,6 +36,10 @@ public struct AgentModeView: View {
                     LabeledContent("Summary", value: plan.summary)
                     LabeledContent("Risk", value: plan.risk.rawValue.capitalized)
                     LabeledContent("Approval", value: plan.requiresUserApproval ? "Required" : "Not required")
+
+                    Button(plan.requiresUserApproval ? "Approve and Run Plan" : "Run Plan") {
+                        Task { await viewModel.runPlan() }
+                    }
                 }
 
                 Section("Steps") {
@@ -44,6 +48,20 @@ public struct AgentModeView: View {
                             Text(actionTitle(step.action))
                                 .font(.headline)
                             Text(step.rationale)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if !viewModel.executionResults.isEmpty {
+                Section("Results") {
+                    ForEach(Array(viewModel.executionResults.enumerated()), id: \.offset) { _, result in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(result.status.rawValue.capitalized)
+                                .font(.headline)
+                            Text(result.message)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
