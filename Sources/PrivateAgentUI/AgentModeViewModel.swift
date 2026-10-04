@@ -25,6 +25,7 @@ public final class AgentModeViewModel {
     public var goal: String = ""
     public var planningMode: AgentPlanningMode = .ruleBased
     public private(set) var plan: AgentPlan?
+    public private(set) var plannerDiagnostics: AgentPlannerDiagnostics?
     public private(set) var executionResults: [ActionExecutionResult] = []
     public private(set) var errorMessage: String?
     public var allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts]
@@ -51,6 +52,7 @@ public final class AgentModeViewModel {
         appContext: String? = nil
     ) async {
         errorMessage = nil
+        plannerDiagnostics = nil
         executionResults = []
 
         let observation = AgentObservation(
@@ -72,7 +74,9 @@ public final class AgentModeViewModel {
                 }
                 let generator = PrivateAgentEngineTextGenerator(engine: engine)
                 let planner = LLMAgentPlanner(generator: generator)
-                plan = try await planner.makePlan(for: observation, allowedModes: allowedModes)
+                let result = try await planner.makePlanWithDiagnostics(for: observation, allowedModes: allowedModes)
+                plan = result.plan
+                plannerDiagnostics = result.diagnostics
             }
         } catch {
             plan = nil
