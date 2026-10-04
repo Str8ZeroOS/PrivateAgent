@@ -43,7 +43,6 @@ private struct AgentRunRecordDetailView: View {
                 LabeledContent("Goal", value: record.goal)
                 LabeledContent("Planner", value: record.planningMode)
                 LabeledContent("Created", value: record.createdAt.formatted())
-                LabeledContent("Modes", value: record.allowedModes.joined(separator: ", "))
             }
 
             if let errorMessage = record.errorMessage {
@@ -51,6 +50,12 @@ private struct AgentRunRecordDetailView: View {
                     Text(errorMessage)
                         .foregroundStyle(.red)
                 }
+            }
+
+            Section("Allowed Modes") {
+                Text(record.allowedModesJSON)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
             }
 
             Section("Observation") {
