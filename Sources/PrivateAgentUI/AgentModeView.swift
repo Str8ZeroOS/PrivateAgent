@@ -42,13 +42,8 @@ public struct AgentModeView: View {
 
             Section("Mac Bridge") {
                 TextField("Host", text: $viewModel.bridgeHost)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
                 TextField("Port", text: $viewModel.bridgePort)
-                    .keyboardType(.numberPad)
                 SecureField("Token", text: $viewModel.bridgeToken)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
 
                 Button("Check Bridge") {
                     Task { await viewModel.checkBridgeHealth() }
