@@ -1,7 +1,11 @@
 import Foundation
 
 public struct AgentPromptCompiler: Sendable {
-    public init() {}
+    private let systemPrompt: String
+
+    public init(systemPrompt: String = AgentSystemPrompt.balanced) {
+        self.systemPrompt = systemPrompt
+    }
 
     public func compilePrompt(observation: AgentObservation, allowedModes: [AutomationMode]) -> String {
         let modeText = allowedModes.map(\.rawValue).joined(separator: ", ")
@@ -11,8 +15,10 @@ public struct AgentPromptCompiler: Sendable {
         }.joined(separator: "\n")
 
         return """
-        You are PrivateAgent's iOS automation planner. Return only JSON. Do not wrap it in Markdown.
+        SYSTEM PROMPT:
+        \(systemPrompt)
 
+        CURRENT TASK:
         Goal:
         \(observation.userGoal)
 
@@ -26,17 +32,7 @@ public struct AgentPromptCompiler: Sendable {
         Controls:
         \(controls.isEmpty ? "None" : controls)
 
-        Rules:
-        - Prefer in-app actions when possible.
-        - Do not claim normal iOS can inspect or control arbitrary third-party apps.
-        - Use App Intents or Shortcuts only for explicit user-approved integrations.
-        - Use Mac-assisted or WebDriverAgent handoff when the task requires cross-app screen reading or taps.
-        - Require approval before destructive, privacy-sensitive, purchase, account, or external-control actions.
-        - Use risk values only: "low", "medium", "high".
-        - Use step status value "pending" for every new step.
-        - Use a fresh UUID string for each step id.
-
-        Output schema:
+        Required JSON schema:
         {
           "summary": "short plan summary",
           "steps": [
@@ -62,6 +58,8 @@ public struct AgentPromptCompiler: Sendable {
         - Scroll: { "scroll": { "direction": "down" } }
         - Wait: { "wait": { "seconds": 1.0 } }
         - Handoff: { "handoff": { "_0": { "target": "macAssisted", "reason": "why external control is needed" } } }
+
+        Final reminder: return only valid JSON. Do not wrap it in Markdown.
         """
     }
 }
