@@ -40,12 +40,20 @@ public struct AgentPromptCompiler: Sendable {
               "id": "UUID-string",
               "action": { "answer": { "_0": "text to show" } },
               "rationale": "why this step is needed",
-              "status": "pending"
+              "status": "pending",
+              "target": "optional target",
+              "risk": "low",
+              "requiresApproval": false,
+              "expectedResult": "optional observable result",
+              "verification": { "kind": "none" }
             }
           ],
           "requiresUserApproval": false,
           "risk": "low"
         }
+
+        Verification kinds: none, url_contains, visible_text_contains, control_exists, app_context_contains, state_predicate.
+        Prefer one next action. After that action the runtime will observe and verify before planning again.
 
         Action encodings:
         - Answer: { "answer": { "_0": "text" } }

@@ -37,7 +37,7 @@ public struct LLMAgentPlanner<Generator: AgentTextGenerating>: AgentPlanning {
         promptCompiler: AgentPromptCompiler = AgentPromptCompiler(),
         repairPromptCompiler: AgentPlanRepairPromptCompiler = AgentPlanRepairPromptCompiler(),
         decoder: any AgentPlanDecoding = JSONAgentPlanDecoder(),
-        maxRepairAttempts: Int = 1
+        maxRepairAttempts: Int = AgentLoopLimits.default.maxJSONRepairAttempts
     ) {
         self.generator = generator
         self.promptCompiler = promptCompiler
@@ -52,31 +52,15 @@ public struct LLMAgentPlanner<Generator: AgentTextGenerating>: AgentPlanning {
 
     public func makePlanWithDiagnostics(for observation: AgentObservation, allowedModes: [AutomationMode]) async throws -> AgentPlannerResult {
         let prompt = promptCompiler.compilePrompt(observation: observation, allowedModes: allowedModes)
-        var response = try await generator.generateText(prompt: prompt)
-
-        do {
-            return AgentPlannerResult(plan: try decoder.decodePlan(from: response))
-        } catch {
-            guard maxRepairAttempts > 0 else { throw error }
-            var lastError: Error = error
-
-            for attempt in 1...maxRepairAttempts {
-                let repairPrompt = repairPromptCompiler.compileRepairPrompt(malformedResponse: response, decodeError: lastError)
-                response = try await generator.generateText(prompt: repairPrompt)
-
-                do {
-                    let plan = try decoder.decodePlan(from: response)
-                    return AgentPlannerResult(
-                        plan: plan,
-                        diagnostics: AgentPlannerDiagnostics(repairAttempts: attempt, usedRepair: true)
-                    )
-                } catch {
-                    lastError = error
-                }
-            }
-
-            throw lastError
-        }
+        let response = try await generator.generateText(prompt: prompt)
+        let repaired = try await JSONRepairEngine().decodePlan(
+            from: response,
+            decoder: decoder,
+            generator: generator,
+            repairPromptCompiler: repairPromptCompiler,
+            maxRepairAttempts: maxRepairAttempts
+        )
+        return AgentPlannerResult(plan: repaired.value, diagnostics: repaired.diagnostics)
     }
 }
 
@@ -88,17 +72,16 @@ public struct JSONAgentPlanDecoder: AgentPlanDecoding {
     public init() {}
 
     public func decodePlan(from text: String) throws -> AgentPlan {
-        let json = extractJSONObject(from: text)
-        let data = Data(json.utf8)
-        return try JSONDecoder().decode(AgentPlan.self, from: data)
-    }
-
-    private func extractJSONObject(from text: String) -> String {
-        guard let first = text.firstIndex(of: "{"), let last = text.lastIndex(of: "}"), first <= last else {
-            return text
+        let json = JSONRepairEngine.extractJSONObject(from: text)
+        guard json.contains("{"), json.contains("}") else {
+            throw AgentPlanDecodingError.noJSONFound
         }
 
-        return String(text[first...last])
+        do {
+            return try JSONDecoder().decode(AgentPlan.self, from: Data(json.utf8))
+        } catch {
+            throw AgentPlanDecodingError.schemaViolation(JSONRepairEngine.describeSchemaViolation(error))
+        }
     }
 }
 
@@ -123,7 +106,12 @@ public struct AgentPlanRepairPromptCompiler: Sendable {
               "id": "UUID-string",
               "action": { "answer": { "_0": "text to show" } },
               "rationale": "why this step is needed",
-              "status": "pending"
+              "status": "pending",
+              "target": "optional target",
+              "risk": "low",
+              "requiresApproval": false,
+              "expectedResult": "optional observable result",
+              "verification": { "kind": "none" }
             }
           ],
           "requiresUserApproval": false,

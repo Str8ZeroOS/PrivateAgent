@@ -33,10 +33,17 @@ public final class AgentModeViewModel {
     public private(set) var executionResults: [ActionExecutionResult] = []
     public private(set) var errorMessage: String?
     public private(set) var lastObservation: AgentObservation?
+    public private(set) var phase: AgentPhase = .idle
+    public private(set) var isRunning = false
+    public private(set) var stepRecords: [StepRunRecord] = []
+    public private(set) var loopSnapshot: AgentLoopSnapshot?
+    public private(set) var pendingApproval: AgentApprovalRequest?
     public var allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts]
 
     private let session: AgentSession
     private let runner: PlanRunner
+    private var approvalBroker: AgentApprovalBroker?
+    private var runningLoop: AgentLoop?
 
     public init(
         session: AgentSession = AgentSession(),
@@ -119,6 +126,125 @@ public final class AgentModeViewModel {
         guard let plan else { return }
         errorMessage = nil
         executionResults = await runner.run(plan)
+    }
+
+    public func runAgent(
+        engine: PrivateAgentEngine? = nil,
+        visibleText: [String] = [],
+        controls: [AgentControl] = [],
+        appContext: String? = nil
+    ) async {
+        errorMessage = nil
+        plannerDiagnostics = nil
+        executionResults = []
+        stepRecords = []
+        pendingApproval = nil
+        isRunning = true
+        phase = .understanding
+
+        let broker = AgentApprovalBroker()
+        approvalBroker = broker
+
+        let planner: any AgentPlanning
+        switch planningMode {
+        case .ruleBased:
+            planner = RuleBasedAgentPlanner()
+        case .localModel:
+            guard let engine else {
+                errorMessage = PrivateAgentEngineTextGeneratorError.modelNotReady.localizedDescription
+                isRunning = false
+                phase = .failed
+                return
+            }
+            planner = LLMAgentPlanner(
+                generator: PrivateAgentEngineTextGenerator(engine: engine),
+                maxRepairAttempts: AgentLoopLimits.default.maxJSONRepairAttempts
+            )
+        }
+
+        let eventBridge = AgentLoopEventBridge { [weak self] event in
+            self?.apply(event)
+        }
+
+        let loop = AgentLoop(
+            configuration: AgentLoopConfiguration(
+                observer: InAppObserver(
+                    visibleText: visibleText,
+                    controls: controls,
+                    appContext: appContext
+                ),
+                planner: planner,
+                executor: SystemActionExecutorFactory.makeDefaultExecutor(),
+                approval: broker,
+                allowedModes: allowedModes,
+                eventHandler: { event in
+                    await eventBridge.emit(event)
+                }
+            )
+        )
+        runningLoop = loop
+
+        let snapshot = await loop.run(goal: goal)
+        apply(snapshot: snapshot)
+        isRunning = false
+        runningLoop = nil
+        approvalBroker = nil
+    }
+
+    public func cancelAgent() async {
+        await runningLoop?.cancel()
+        await approvalBroker?.respond(.cancelled)
+    }
+
+    public func approvePendingPlan() async {
+        await approvalBroker?.respond(.approved)
+    }
+
+    public func rejectPendingPlan() async {
+        await approvalBroker?.respond(.rejected)
+    }
+
+    public func apply(_ event: AgentLoopEvent) {
+        switch event {
+        case .phaseChanged(let newPhase):
+            phase = newPhase
+        case .observation(let observation):
+            lastObservation = observation
+        case .planUpdated(let newPlan):
+            plan = newPlan
+        case .validation(let validation):
+            if !validation.isValid {
+                errorMessage = validation.errorMessages.joined(separator: "\n")
+            }
+        case .awaitingApproval(let request):
+            pendingApproval = request
+            plan = request.plan
+            phase = .awaitingApproval
+        case .stepStarted:
+            break
+        case .actionResult(let result):
+            executionResults.append(result)
+        case .verification:
+            break
+        case .recovery(let decision):
+            if case .stop(let message) = decision.strategy {
+                errorMessage = message
+            }
+        }
+    }
+
+    private func apply(snapshot: AgentLoopSnapshot) {
+        loopSnapshot = snapshot
+        phase = snapshot.phase
+        plan = snapshot.plan
+        lastObservation = snapshot.observation
+        stepRecords = snapshot.stepRecords
+        plannerDiagnostics = snapshot.plannerDiagnostics
+        pendingApproval = snapshot.pendingApproval
+        if let message = snapshot.outcomeMessage, snapshot.phase == .failed || snapshot.phase == .blocked {
+            errorMessage = message
+        }
+        executionResults = snapshot.stepRecords.map(\.execution)
     }
 
     private func makeBridgeClient() -> LocalBridgeClient? {

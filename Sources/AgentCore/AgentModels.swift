@@ -75,17 +75,69 @@ public struct AgentPlan: Sendable, Codable, Equatable {
     }
 }
 
-public struct AgentStep: Sendable, Codable, Equatable, Identifiable {
+public struct AgentStep: Sendable, Equatable, Identifiable {
     public var id: UUID
     public var action: AgentAction
     public var rationale: String
     public var status: AgentStepStatus
+    public var target: String?
+    public var risk: AgentRisk
+    public var requiresApproval: Bool
+    public var expectedResult: String?
+    public var verification: VerificationSpec
 
-    public init(id: UUID = UUID(), action: AgentAction, rationale: String, status: AgentStepStatus = .pending) {
+    public init(
+        id: UUID = UUID(),
+        action: AgentAction,
+        rationale: String,
+        status: AgentStepStatus = .pending,
+        target: String? = nil,
+        risk: AgentRisk = .low,
+        requiresApproval: Bool = false,
+        expectedResult: String? = nil,
+        verification: VerificationSpec = .none
+    ) {
         self.id = id
         self.action = action
         self.rationale = rationale
         self.status = status
+        self.target = target
+        self.risk = risk
+        self.requiresApproval = requiresApproval
+        self.expectedResult = expectedResult
+        self.verification = verification
+    }
+}
+
+extension AgentStep: Codable {
+    enum CodingKeys: String, CodingKey {
+        case id, action, rationale, status, target, risk, requiresApproval, expectedResult, verification
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        action = try container.decode(AgentAction.self, forKey: .action)
+        rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
+        status = try container.decodeIfPresent(AgentStepStatus.self, forKey: .status) ?? .pending
+        target = try container.decodeIfPresent(String.self, forKey: .target)
+        risk = try container.decodeIfPresent(AgentRisk.self, forKey: .risk) ?? .low
+        requiresApproval = try container.decodeIfPresent(Bool.self, forKey: .requiresApproval) ?? false
+        expectedResult = try container.decodeIfPresent(String.self, forKey: .expectedResult)
+        verification = try container.decodeIfPresent(VerificationSpec.self, forKey: .verification) ?? .none
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(action, forKey: .action)
+        try container.encode(rationale, forKey: .rationale)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(target, forKey: .target)
+        try container.encode(risk, forKey: .risk)
+        try container.encode(requiresApproval, forKey: .requiresApproval)
+        try container.encodeIfPresent(expectedResult, forKey: .expectedResult)
+        try container.encode(verification, forKey: .verification)
     }
 }
 

@@ -12,7 +12,14 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         guard !trimmedGoal.isEmpty else {
             return AgentPlan(
                 summary: "Ask for a task before acting.",
-                steps: [AgentStep(action: .askUser("What would you like PrivateAgent to do?"), rationale: "The agent needs a concrete goal.")],
+                steps: [
+                    AgentStep(
+                        action: .askUser("What would you like PrivateAgent to do?"),
+                        rationale: "The agent needs a concrete goal.",
+                        target: "user",
+                        expectedResult: "User provides a goal"
+                    )
+                ],
                 requiresUserApproval: false,
                 risk: .low
             )
@@ -25,7 +32,11 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
                 steps: [
                     AgentStep(
                         action: .handoff(AgentHandoff(target: target, reason: "This task appears to require reading or controlling another app.")),
-                        rationale: "Normal iOS apps cannot inspect and control arbitrary third-party apps like Android Accessibility Services."
+                        rationale: "Normal iOS apps cannot inspect and control arbitrary third-party apps like Android Accessibility Services.",
+                        target: target.rawValue,
+                        risk: target == .jailbreak ? .high : .medium,
+                        requiresApproval: true,
+                        expectedResult: "External automation mode accepted the handoff"
                     )
                 ],
                 requiresUserApproval: true,
@@ -38,7 +49,9 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
             steps: [
                 AgentStep(
                     action: .answer(trimmedGoal),
-                    rationale: "The task can be handled by the local chat/model workspace without external app control."
+                    rationale: "The task can be handled by the local chat/model workspace without external app control.",
+                    target: "privateAgent",
+                    expectedResult: trimmedGoal
                 )
             ],
             requiresUserApproval: false,
