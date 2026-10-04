@@ -51,12 +51,20 @@ public struct InAppObserver: AgentObserving {
     }
 
     public func observe(goal: String, context: AgentObservationContext) async throws -> AgentObservation {
-        var text = context.visibleText.isEmpty ? visibleText : context.visibleText
+        let workspace = InAppWorkspace.observation(goal: goal)
+        var text = context.visibleText.isEmpty ? (visibleText.isEmpty ? workspace.visibleText : visibleText) : context.visibleText
         if let result = context.lastResult {
             text.append(result.message)
         }
-        let controls = context.controls.isEmpty ? self.controls : context.controls
-        let appContext = context.appContext ?? self.appContext
+        var controls = context.controls.isEmpty
+            ? (self.controls.isEmpty ? workspace.controls : self.controls)
+            : context.controls
+        var appContext = context.appContext ?? self.appContext ?? workspace.appContext
+        if let screen = inferredScreen(from: context.lastResult?.message) {
+            appContext = InAppWorkspace.appContext(for: screen)
+            controls = InAppWorkspace.controls(on: screen)
+            text.append(contentsOf: InAppWorkspace.visibleText(on: screen))
+        }
         return AgentObservation(
             source: context.source,
             userGoal: goal,
@@ -64,6 +72,16 @@ public struct InAppObserver: AgentObserving {
             controls: controls,
             appContext: appContext
         )
+    }
+
+    private func inferredScreen(from message: String?) -> InAppScreen? {
+        guard let message else { return nil }
+        for screen in InAppScreen.allCases {
+            if message.contains("screen=\(screen.rawValue)") {
+                return screen
+            }
+        }
+        return nil
     }
 }
 

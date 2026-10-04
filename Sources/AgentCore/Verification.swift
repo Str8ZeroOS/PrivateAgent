@@ -305,6 +305,10 @@ public struct GoalVerifier: GoalVerifying {
             if last.execution.status == .completed {
                 return GoalVerificationResult(isSatisfied: true, message: "iOS-side work finished by handing off to an allowed external mode.")
             }
+        case .invokeAppIntent:
+            if last.execution.status == .completed {
+                return GoalVerificationResult(isSatisfied: true, message: "First-party App Intent completed inside PrivateAgent.")
+            }
         default:
             break
         }

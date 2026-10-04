@@ -92,12 +92,13 @@ public final class AgentModeViewModel {
         plannerDiagnostics = nil
         executionResults = []
 
+        let workspace = InAppWorkspace.observation(goal: goal)
         let observation = AgentObservation(
             source: .privateAgentApp,
             userGoal: goal,
-            visibleText: visibleText,
-            controls: controls,
-            appContext: appContext
+            visibleText: visibleText.isEmpty ? workspace.visibleText : visibleText,
+            controls: controls.isEmpty ? workspace.controls : controls,
+            appContext: appContext ?? workspace.appContext
         )
         lastObservation = observation
 

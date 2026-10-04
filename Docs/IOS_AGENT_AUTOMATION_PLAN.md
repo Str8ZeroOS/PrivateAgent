@@ -47,10 +47,12 @@ Hard limits, with no unbounded loops:
 | Local model adapter | Uses the loaded on-device model to produce planning JSON | `PrivateAgentEngineTextGenerator` |
 | Session | Holds allowed modes and latest rule-based plan | `AgentSession` actor |
 | UI bridge | Presents live Agent Mode state in SwiftUI | `AgentModeView`, `AgentModeViewModel` |
-| Executors | Runs approved actions with capability fallback | `PlanRunner`, `ActionExecutorRouter`, URL and Shortcuts executors |
+| Executors | Runs approved actions with capability fallback | `PlanRunner`, `ActionExecutorRouter`, in-app, App Intents, URL, Shortcuts |
 | Verification | `ACTION_SUCCESS` vs `ACTION_VERIFIED` | `ActionVerifier`, `GoalVerifier` |
 | Recovery | Transient retry, wrong-target re-observe, permission guidance, capability fallback, or stop | `RecoveryEngine`, `CapabilityFallback` |
 | Mac bridge | Cross-app observation/action handoff | `MacBridgeClient`, `LocalBridgeClient`, `MacBridgeActionExecutor` |
+| In-app workspace | First-party screens, controls, and App Intents | `InAppWorkspace`, `InAppActionExecutor`, `AppIntentActionExecutor` |
+| WebDriverAgent | Developer-device UI automation contract | `WebDriverAgentClient`, `LocalWebDriverAgentClient`, `Docs/WEBDRIVERAGENT_PROTOCOL.md` |
 
 Plan steps now carry `id`, `action`, `target`, `risk`, `requiresApproval`, `expectedResult`, and a `verification` spec (`none`, `url_contains`, `visible_text_contains`, `control_exists`, `app_context_contains`, `state_predicate`).
 
@@ -85,6 +87,9 @@ Capability fallback order when a primary executor is unavailable:
 - `ActionVerifier` / `GoalVerifier` distinguishing executor success from observation proof.
 - `RecoveryEngine` classification: transient, wrong target, permission, unavailable capability, impossible.
 - Mac bridge protocol and local HTTP client contracts.
+- First-party App Intents catalog (`OpenModelManager`, `OpenSettings`, `StartChat`, `OpenAgentMode`, `OpenURL`) and `AppIntentActionExecutor`.
+- Richer in-app observation of PrivateAgent-owned screens and controls via `InAppWorkspace`.
+- WebDriverAgent/XCTest adapter contract for developer devices only.
 - AgentCore is Foundation-only. UIKit stays behind `#if canImport(UIKit)` in `PrivateAgentUI`.
 - Linux host builds: `Package.swift` exposes only `AgentCore` on Linux so `swift build` and `swift test` run without Metal/UIKit.
 - Unit tests for the state machine, loop limits, JSON repair, validator, verifier, and recovery classification.
@@ -105,10 +110,10 @@ When a goal needs those capabilities, the planner must hand off to an allowed ex
 
 1. Full `swift build` / `swift test` of FlashMoE, Metal, and `PrivateAgentUI` on macOS (Linux only builds AgentCore).
 2. Xcode iOS app compile, signing, and on-device Agent Mode run.
-3. App Intents executor for first-party integrations.
+3. Hook `InAppActionExecutor` / first-party App Intents to real SwiftUI navigation and `AppIntents` definitions in the iOS target.
 4. A paired Mac helper that implements privileged observation/action adapters from `Docs/MAC_BRIDGE_PROTOCOL.md`.
-5. WebDriverAgent bridge for developer/test-device automation.
-6. Richer in-app observation (visible SwiftUI controls) beyond the current goal/context snapshot.
+5. A developer-device WDA adapter process that implements `Docs/WEBDRIVERAGENT_PROTOCOL.md` on top of WebDriverAgent/XCTest.
+6. Live SwiftUI accessibility snapshots for in-app controls instead of the static workspace catalog.
 
 ## Safety rules
 

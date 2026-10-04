@@ -25,6 +25,10 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
             )
         }
 
+        if let workspacePlan = inAppWorkspacePlan(for: observation, allowedModes: allowedModes) {
+            return workspacePlan
+        }
+
         if requiresExternalAutomation(observation: observation) {
             let target = bestExternalMode(from: allowedModes)
             return AgentPlan(
@@ -68,10 +72,65 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         }
 
         let goal = observation.userGoal.lowercased()
+        if matchingWorkspaceControl(in: observation) != nil {
+            return false
+        }
         let externalSignals = [
-            "tap", "swipe", "scroll", "open app", "settings", "instagram", "youtube", "telegram", "chrome", "safari", "control my phone", "use my phone"
+            "swipe", "scroll", "open app", "instagram", "youtube", "telegram", "chrome", "safari",
+            "control my phone", "use my phone", "iphone settings", "ios settings", "system settings", "settings app"
         ]
-        return externalSignals.contains { goal.contains($0) }
+        if externalSignals.contains(where: { goal.contains($0) }) {
+            return true
+        }
+        if goal.contains("tap") && matchingWorkspaceControl(in: observation) == nil {
+            return true
+        }
+        return false
+    }
+
+    private func inAppWorkspacePlan(for observation: AgentObservation, allowedModes: [AutomationMode]) -> AgentPlan? {
+        if let control = matchingWorkspaceControl(in: observation) {
+            return AgentPlan(
+                summary: "Use a PrivateAgent workspace control.",
+                steps: [
+                    AgentStep(
+                        action: .tap(controlId: control.id),
+                        rationale: "The requested control is part of PrivateAgent's own UI.",
+                        target: control.id,
+                        expectedResult: control.label,
+                        verification: .visibleTextContains(control.label)
+                    )
+                ]
+            )
+        }
+
+        if let intent = FirstPartyAppIntents.matchingGoal(observation.userGoal) {
+            let action: AgentAction = allowedModes.contains(.appIntents)
+                ? .invokeAppIntent(intent.name)
+                : .tap(controlId: intent.controlId ?? "nav.agentMode")
+            return AgentPlan(
+                summary: "Handle the request inside PrivateAgent.",
+                steps: [
+                    AgentStep(
+                        action: action,
+                        rationale: "This is a first-party PrivateAgent workspace action, not third-party UI control.",
+                        target: intent.controlId ?? intent.name,
+                        expectedResult: intent.summary,
+                        verification: .appContextContains(intent.screen?.rawValue ?? "PrivateAgent")
+                    )
+                ]
+            )
+        }
+
+        return nil
+    }
+
+    private func matchingWorkspaceControl(in observation: AgentObservation) -> AgentControl? {
+        let goal = observation.userGoal.lowercased()
+        let controls = observation.controls.isEmpty ? InAppWorkspace.allControls() : observation.controls
+        return controls.first { control in
+            goal.contains(control.label.lowercased()) || goal.contains(control.id.lowercased())
+        }
     }
 
     private func bestExternalMode(from allowedModes: [AutomationMode]) -> AutomationMode {

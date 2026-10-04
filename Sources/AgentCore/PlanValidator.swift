@@ -84,6 +84,9 @@ public struct PlanValidator: PlanValidating {
                 if !observation.controls.isEmpty && !observation.controls.contains(where: { $0.id == controlId }) {
                     issues.append(PlanValidationIssue(severity: .warning, message: "Tap target \(controlId) is not in the current observation."))
                 }
+                if isInAppWorkspaceControl(controlId, observation: observation) {
+                    break
+                }
                 if !hasExternalUIControl(allowedModes) {
                     issues.append(PlanValidationIssue(severity: .error, message: "Tap requires Mac-assisted, WebDriverAgent, or jailbreak capability."))
                 }
@@ -94,6 +97,9 @@ public struct PlanValidator: PlanValidating {
                 }
                 if !observation.controls.isEmpty && !observation.controls.contains(where: { $0.id == controlId }) {
                     issues.append(PlanValidationIssue(severity: .warning, message: "Type target \(controlId) is not in the current observation."))
+                }
+                if isInAppWorkspaceControl(controlId, observation: observation) {
+                    break
                 }
                 if !hasExternalUIControl(allowedModes) {
                     issues.append(PlanValidationIssue(severity: .error, message: "Type requires Mac-assisted, WebDriverAgent, or jailbreak capability."))
@@ -134,6 +140,13 @@ public struct PlanValidator: PlanValidating {
 
     private func hasExternalUIControl(_ allowedModes: [AutomationMode]) -> Bool {
         allowedModes.contains(.macAssisted) || allowedModes.contains(.webDriverAgent) || allowedModes.contains(.jailbreak)
+    }
+
+    private func isInAppWorkspaceControl(_ controlId: String, observation: AgentObservation) -> Bool {
+        if InAppWorkspace.control(id: controlId) != nil {
+            return observation.source == .privateAgentApp || observation.source == .appIntent || observation.source == .userProvided
+        }
+        return observation.source == .privateAgentApp && observation.controls.contains(where: { $0.id == controlId })
     }
 
     private func isPlausibleURL(_ raw: String) -> Bool {

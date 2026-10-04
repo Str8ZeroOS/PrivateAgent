@@ -37,28 +37,28 @@ struct ConversationListView: View {
         .navigationTitle("Chats")
         .toolbar {
             #if os(iOS)
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow
                 Button {
                     newConversation()
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow
                 Button {
                     showModels = true
                 } label: {
                     Image(systemName: "square.grid.2x2")
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow
                 Button {
                     showSettings = true
                 } label: {
                     Image(systemName: "gear")
                 }
             }
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .topBarLeading) { // cross-platform-check: allow
                 EditButton()
             }
             #else

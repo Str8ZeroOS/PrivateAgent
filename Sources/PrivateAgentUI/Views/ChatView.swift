@@ -132,7 +132,7 @@ struct ChatView: View {
                     }
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow
                 Button {
                     showSystemPrompt = true
                 } label: {

@@ -74,12 +74,18 @@ public enum SystemActionExecutorFactory {
     public static func makeDefaultExecutor() -> any AgentActionExecuting {
         #if canImport(UIKit)
         return ActionExecutorRouter(executors: [
+            InAppActionExecutor(),
+            AppIntentActionExecutor(),
             URLActionExecutor(),
             ShortcutActionExecutor(),
             PlanningOnlyActionExecutor()
         ])
         #else
-        return PlanningOnlyActionExecutor()
+        return ActionExecutorRouter(executors: [
+            InAppActionExecutor(),
+            AppIntentActionExecutor(),
+            PlanningOnlyActionExecutor()
+        ])
         #endif
     }
 }

@@ -39,7 +39,7 @@ struct SettingsView: View {
                 TextField("Model", text: $cloudModel)
                     .autocorrectionDisabled()
                 #if os(iOS)
-                    .textInputAutocapitalization(.never)
+                    .textInputAutocapitalization(.never) // cross-platform-check: allow
                 #endif
                 if keySaved {
                     Text("A key is saved in the Keychain.")
