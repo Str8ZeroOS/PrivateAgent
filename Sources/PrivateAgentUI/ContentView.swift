@@ -37,7 +37,7 @@ public struct ContentView: View {
             }
         }
         .environment(engine)
-        .modelContainer(for: [Conversation.self, Message.self])
+        .modelContainer(for: [Conversation.self, Message.self, AgentRunRecord.self])
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background && engine.state == .generating {
                 print("[APP] entering background while generating — cancelling to avoid GPU error")
