@@ -17,7 +17,7 @@ public struct ContentView: View {
                     ChatView(conversationId: conversationId)
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem {
                         Button("Agent") {
                             isAgentModePresented = true
                         }
@@ -28,7 +28,7 @@ public struct ContentView: View {
             NavigationStack {
                 AgentModeView()
                     .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem {
                             Button("Done") {
                                 isAgentModePresented = false
                             }
