@@ -107,6 +107,13 @@ public struct AgentModeView: View {
             }
         }
         .navigationTitle("Agent Mode")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink("History") {
+                    AgentHistoryView()
+                }
+            }
+        }
         .confirmationDialog(
             "Run this plan?",
             isPresented: $isApprovalDialogPresented,
