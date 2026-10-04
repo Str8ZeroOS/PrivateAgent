@@ -1,17 +1,19 @@
 # iOS Agent Automation Plan
 
-PrivateAgent started as an offline iOS LLM runtime. The Android-style PrivateAgent experience is different: it observes phone state, plans actions, and executes taps, typing, scrolling, and app handoffs in a loop. iOS does not expose an Android Accessibility Services equivalent to normal App Store apps, so the implementation needs explicit modes with honest capability boundaries.
+PrivateAgent started as an offline iOS LLM runtime. The Android-style PrivateAgent experience is different: it observes phone state, plans actions, and executes taps, typing, scrolling, and app handoffs in a loop. iOS does not expose an Android Accessibility Services equivalent to normal App Store apps, so the implementation uses explicit modes with honest capability boundaries.
 
 ## Architecture
 
-| Layer | Responsibility | Initial implementation |
+| Layer | Responsibility | Implementation |
 | --- | --- | --- |
 | AgentCore | Shared observation, action, plan, risk, and capability models | `Sources/AgentCore` |
-| Planner | Converts a user goal and observation into a safe plan | `RuleBasedAgentPlanner`, later replaceable with local/API LLM planner |
-| Prompt compiler | Creates the model prompt for JSON planning | `AgentPromptCompiler` |
-| Session | Holds allowed modes and latest plan | `AgentSession` actor |
-| UI bridge | Presents Agent Mode in SwiftUI | `AgentModeViewModel` |
-| Executors | Runs approved actions | Next phase |
+| Planner | Converts a user goal and observation into a safe plan | `RuleBasedAgentPlanner`, `LLMAgentPlanner` |
+| Prompt compiler | Creates the model prompt for strict JSON planning | `AgentPromptCompiler` |
+| Local model adapter | Uses the loaded on-device model to produce planning JSON | `PrivateAgentEngineTextGenerator` |
+| Session | Holds allowed modes and latest rule-based plan | `AgentSession` actor |
+| UI bridge | Presents Agent Mode in SwiftUI | `AgentModeView`, `AgentModeViewModel` |
+| Executors | Runs approved actions | `PlanRunner`, `ActionExecutorRouter`, URL and Shortcuts executors |
+| Mac bridge | Defines cross-app observation/action handoff | `MacBridgeClient`, `LocalBridgeClient`, `MacBridgeActionExecutor` |
 
 ## Automation modes
 
@@ -24,22 +26,26 @@ PrivateAgent started as an offline iOS LLM runtime. The Android-style PrivateAge
 | WebDriverAgent/XCTest | No for consumer runtime | Yes | Yes | Developer/test-device automation |
 | Jailbreak/private entitlement | No | Yes | Yes | Most Android-like, but fragile and non-App-Store-safe |
 
-## Next implementation phases
+## Implemented phases
 
-1. Add an Agent Mode screen to the iOS app.
-2. Add a JSON LLM planner that uses `AgentPromptCompiler` and the existing local engine when a model is loaded.
-3. Add action executors for in-app commands, URLs, Shortcuts, and App Intents.
-4. Add user approval UI for medium/high-risk actions.
-5. Add a Mac bridge protocol for screen observations and action execution.
-6. Add optional WebDriverAgent bridge for developer devices.
-7. Add telemetry-free local run logs so users can inspect what the agent did.
+1. Agent Mode screen exposed from the app shell.
+2. Rule-based planning for starter behavior and guardrails.
+3. Strict JSON prompt compiler for LLM planning.
+4. Local model planner adapter using `PrivateAgentEngine.generate`.
+5. Plan runner and action executor router.
+6. URL and Shortcuts action executors.
+7. Mac bridge protocol and local HTTP client contracts.
+8. Unit tests for planner, JSON decoding, and plan runner behavior.
 
-## First executors to build
+## Remaining phases
 
-- `InAppActionExecutor`: answers, asks the user, and navigates PrivateAgent-owned screens.
-- `URLActionExecutor`: opens safe URLs after approval.
-- `ShortcutActionExecutor`: invokes named shortcuts through supported system APIs or URL schemes.
-- `MacBridgeActionExecutor`: sends handoff payloads to a paired local bridge.
+1. Run a full Xcode/SPM compile pass and fix any compiler errors.
+2. Add richer approval UI before medium/high-risk execution.
+3. Add App Intents executor for first-party integrations.
+4. Build the paired Mac helper that implements `Docs/MAC_BRIDGE_PROTOCOL.md`.
+5. Add local run history so users can inspect every observation, plan, action, and result.
+6. Add retry/repair flow when local model JSON fails to decode.
+7. Add WebDriverAgent bridge for developer/test-device automation.
 
 ## Safety rules
 
