@@ -5,6 +5,26 @@ public protocol AgentTextGenerating: Sendable {
     func generateText(prompt: String) async throws -> String
 }
 
+public struct AgentPlannerDiagnostics: Sendable, Codable, Equatable {
+    public var repairAttempts: Int
+    public var usedRepair: Bool
+
+    public init(repairAttempts: Int = 0, usedRepair: Bool = false) {
+        self.repairAttempts = repairAttempts
+        self.usedRepair = usedRepair
+    }
+}
+
+public struct AgentPlannerResult: Sendable, Codable, Equatable {
+    public var plan: AgentPlan
+    public var diagnostics: AgentPlannerDiagnostics
+
+    public init(plan: AgentPlan, diagnostics: AgentPlannerDiagnostics = AgentPlannerDiagnostics()) {
+        self.plan = plan
+        self.diagnostics = diagnostics
+    }
+}
+
 public struct LLMAgentPlanner<Generator: AgentTextGenerating>: AgentPlanning {
     private let generator: Generator
     private let promptCompiler: AgentPromptCompiler
@@ -27,21 +47,29 @@ public struct LLMAgentPlanner<Generator: AgentTextGenerating>: AgentPlanning {
     }
 
     public func makePlan(for observation: AgentObservation, allowedModes: [AutomationMode]) async throws -> AgentPlan {
+        try await makePlanWithDiagnostics(for: observation, allowedModes: allowedModes).plan
+    }
+
+    public func makePlanWithDiagnostics(for observation: AgentObservation, allowedModes: [AutomationMode]) async throws -> AgentPlannerResult {
         let prompt = promptCompiler.compilePrompt(observation: observation, allowedModes: allowedModes)
         var response = try await generator.generateText(prompt: prompt)
 
         do {
-            return try decoder.decodePlan(from: response)
+            return AgentPlannerResult(plan: try decoder.decodePlan(from: response))
         } catch {
             guard maxRepairAttempts > 0 else { throw error }
             var lastError: Error = error
 
-            for _ in 0..<maxRepairAttempts {
+            for attempt in 1...maxRepairAttempts {
                 let repairPrompt = repairPromptCompiler.compileRepairPrompt(malformedResponse: response, decodeError: lastError)
                 response = try await generator.generateText(prompt: repairPrompt)
 
                 do {
-                    return try decoder.decodePlan(from: response)
+                    let plan = try decoder.decodePlan(from: response)
+                    return AgentPlannerResult(
+                        plan: plan,
+                        diagnostics: AgentPlannerDiagnostics(repairAttempts: attempt, usedRepair: true)
+                    )
                 } catch {
                     lastError = error
                 }
