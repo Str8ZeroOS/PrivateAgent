@@ -53,6 +53,10 @@ public struct AgentModeView: View {
                     LabeledContent("Risk", value: plan.risk.rawValue.capitalized)
                     LabeledContent("Approval", value: plan.requiresUserApproval ? "Required" : "Not required")
 
+                    if let diagnostics = viewModel.plannerDiagnostics, diagnostics.usedRepair {
+                        LabeledContent("JSON Repair", value: "\(diagnostics.repairAttempts) attempt(s)")
+                    }
+
                     Button(plan.requiresUserApproval ? "Approve and Run Plan" : "Run Plan") {
                         if plan.requiresUserApproval {
                             isApprovalDialogPresented = true
