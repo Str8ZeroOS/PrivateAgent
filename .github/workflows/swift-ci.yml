@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 concurrency:
   group: swift-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -28,14 +32,87 @@ jobs:
 
       - name: Print toolchain versions
         run: |
-          xcodebuild -version
-          swift --version
+          xcodebuild -version | tee xcode-version.log
+          swift --version | tee swift-version.log
+
+      - name: Cross-platform Swift preflight
+        run: python3 Scripts/check-cross-platform-swift.py 2>&1 | tee cross-platform-preflight.log
 
       - name: Resolve package dependencies
-        run: swift package resolve
+        run: swift package resolve 2>&1 | tee package-resolve.log
 
       - name: Build
-        run: swift build -v
+        run: swift build -v 2>&1 | tee swift-build.log
 
       - name: Test
-        run: swift test -v
+        run: swift test -v 2>&1 | tee swift-test.log
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-ci-failure-logs
+          path: |
+            xcode-version.log
+            swift-version.log
+            cross-platform-preflight.log
+            package-resolve.log
+            swift-build.log
+            swift-test.log
+          if-no-files-found: ignore
+
+      - name: Open or update CI failure issue
+        if: failure() && github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- privateagent-swift-ci-failure -->';
+            const labels = ['verification', 'ci'];
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const sha = context.sha;
+
+            function tail(path, max = 12000) {
+              if (!fs.existsSync(path)) return `_No ${path} file was produced._`;
+              const text = fs.readFileSync(path, 'utf8');
+              return text.length > max ? text.slice(text.length - max) : text;
+            }
+
+            const body = `${marker}\n## Swift CI failed\n\n- Commit: ${sha}\n- Run: ${runUrl}\n- Workflow: ${context.workflow}\n- Job: ${context.job}\n\n### Cross-platform preflight tail\n\n\`\`\`text\n${tail('cross-platform-preflight.log')}\n\`\`\`\n\n### Build log tail\n\n\`\`\`text\n${tail('swift-build.log')}\n\`\`\`\n\n### Test log tail\n\n\`\`\`text\n${tail('swift-test.log')}\n\`\`\`\n`;
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'ci',
+              per_page: 50,
+            });
+            const existing = issues.find(issue => issue.body && issue.body.includes(marker));
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label });
+              } catch (_) {
+                await github.rest.issues.createLabel({ owner, repo, name: label, color: label === 'ci' ? 'd73a4a' : '0366d6' });
+              }
+            }
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                title: `Swift CI failure on ${sha.slice(0, 7)}`,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title: `Swift CI failure on ${sha.slice(0, 7)}`,
+                body,
+                labels,
+              });
+            }
