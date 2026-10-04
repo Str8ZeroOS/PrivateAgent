@@ -40,6 +40,27 @@ public struct AgentModeView: View {
                 .disabled(isMakePlanDisabled)
             }
 
+            Section("Mac Bridge") {
+                TextField("Host", text: $viewModel.bridgeHost)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("Port", text: $viewModel.bridgePort)
+                    .keyboardType(.numberPad)
+                SecureField("Token", text: $viewModel.bridgeToken)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                Button("Check Bridge") {
+                    Task { await viewModel.checkBridgeHealth() }
+                }
+
+                if let bridgeStatus = viewModel.bridgeStatus {
+                    Text(bridgeStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Allowed Modes") {
                 ForEach(AutomationCapabilities.supportedModes) { capability in
                     Toggle(isOn: binding(for: capability.mode)) {
