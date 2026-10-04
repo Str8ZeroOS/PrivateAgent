@@ -54,9 +54,9 @@ public struct MacBridgeActionExecutor<Client: MacBridgeClient>: AgentActionExecu
 
     public func canExecute(_ action: AgentAction) -> Bool {
         switch action {
-        case .tap, .type, .scroll, .handoff:
+        case .openURL, .tap, .type, .scroll, .wait, .handoff:
             return true
-        case .answer, .askUser, .openURL, .runShortcut, .invokeAppIntent, .wait:
+        case .answer, .askUser, .runShortcut, .invokeAppIntent:
             return false
         }
     }
