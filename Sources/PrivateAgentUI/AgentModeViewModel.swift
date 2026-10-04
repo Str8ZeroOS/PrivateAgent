@@ -5,7 +5,7 @@ import AgentCore
 @MainActor
 @Observable
 public final class AgentModeViewModel {
-    public private(set) var goal: String = ""
+    public var goal: String = ""
     public private(set) var plan: AgentPlan?
     public private(set) var errorMessage: String?
     public var allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts]
