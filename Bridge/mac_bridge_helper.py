@@ -7,9 +7,9 @@ This helper exposes a small authenticated HTTP API on the local network:
 - POST /observation
 - POST /action
 
-It is intentionally conservative. Low-risk Mac actions are executed directly;
-privileged iPhone or cross-app UI actions are logged and reported as requiring a
-future accessibility, XCTest, or mirroring adapter.
+Low-risk Mac actions are enabled by default. Privacy-sensitive observation and
+UI-control actions require explicit launch flags so the bridge can move toward
+Android-like behavior without silently expanding authority.
 
 The script supports both Python 2.7 on older macOS installs and Python 3.x on
 newer machines.
@@ -46,6 +46,13 @@ SAFE_APP_NAMES = set([
     "TextEdit",
 ])
 
+SCROLL_KEY_CODES = {
+    "up": 126,
+    "down": 125,
+    "left": 123,
+    "right": 124,
+}
+
 
 def iso_now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -74,11 +81,29 @@ def run_osascript(script, timeout=10):
     return run_command(["/usr/bin/osascript", "-e", script], timeout=timeout)
 
 
+def apple_string(value):
+    if not isinstance(value, str):
+        value = str(value)
+    return value.replace('\\', '\\\\').replace('"', '\\"')
+
+
 def frontmost_app():
     ok, out, err = run_osascript('tell application "System Events" to get name of first process whose frontmost is true')
     if ok and out:
         return out
     return "unknown (%s)" % err if err else "unknown"
+
+
+def clipboard_summary(enabled):
+    if not enabled:
+        return None
+    ok, out, _ = run_command(["/usr/bin/pbpaste"], timeout=2)
+    if not ok or not out:
+        return "Clipboard empty or unavailable"
+    normalized = " ".join(out.split())
+    if len(normalized) > 120:
+        normalized = normalized[:117] + "..."
+    return "Clipboard text: %s" % normalized
 
 
 def open_url(url):
@@ -99,6 +124,35 @@ def open_app(name):
     return "failed", "Failed to open app: %s" % err
 
 
+def type_text(text):
+    if not isinstance(text, str):
+        return "failed", "Missing text to type."
+    if len(text) > 500:
+        return "failed", "Refused to type more than 500 characters."
+    ok, _, err = run_osascript('tell application "System Events" to keystroke "%s"' % apple_string(text), timeout=5)
+    if ok:
+        return "completed", "Typed text into the frontmost Mac app."
+    return "failed", "Failed to type text. Grant Accessibility permission to Terminal or Python: %s" % err
+
+
+def key_code(code):
+    try:
+        value = int(code)
+    except Exception:
+        return "failed", "Missing numeric key code."
+    ok, _, err = run_osascript('tell application "System Events" to key code %d' % value, timeout=5)
+    if ok:
+        return "completed", "Sent key code %d to the frontmost Mac app." % value
+    return "failed", "Failed to send key code. Grant Accessibility permission to Terminal or Python: %s" % err
+
+
+def scroll(direction):
+    code = SCROLL_KEY_CODES.get(str(direction or "").lower())
+    if code is None:
+        return "failed", "Scroll direction must be up, down, left, or right."
+    return key_code(code)
+
+
 def parse_action(action):
     if not isinstance(action, dict) or not action:
         return None, {}
@@ -111,7 +165,7 @@ def parse_action(action):
     return name, payload
 
 
-def execute_action(action):
+def execute_action(action, state):
     name, payload = parse_action(action)
     if name == "openURL":
         return open_url(payload.get("_0") or payload.get("url") or payload.get("value"))
@@ -128,18 +182,57 @@ def execute_action(action):
         return "skipped", "Handoff logged for Mac-assisted workflow: %s" % reason
     if name == "openApp":
         return open_app(payload.get("name") or payload.get("_0"))
-    if name in ("tap", "type", "scroll"):
-        return "skipped", "%s requires an explicitly approved accessibility, XCTest, or mirroring adapter." % name
+    if name == "type":
+        if not state.enable_accessibility_actions:
+            return "skipped", "Typing requires --enable-accessibility-actions."
+        return type_text(payload.get("text") or payload.get("_1") or "")
+    if name == "scroll":
+        if not state.enable_accessibility_actions:
+            return "skipped", "Scrolling requires --enable-accessibility-actions."
+        return scroll(payload.get("direction") or payload.get("_0"))
+    if name == "keyCode":
+        if not state.enable_accessibility_actions:
+            return "skipped", "Key codes require --enable-accessibility-actions."
+        return key_code(payload.get("code") or payload.get("_0"))
+    if name == "tap":
+        return "skipped", "Tap still requires a coordinate/control adapter; current bridge supports keyboard-style accessibility actions only."
     if name == "runShortcut":
         return "failed", "Shortcuts CLI is not available on this macOS version."
     return "failed", "Unsupported bridge action: %s" % name
 
 
 class BridgeState(object):
-    def __init__(self, token):
+    def __init__(self, token, enable_accessibility_actions=False, enable_clipboard_observation=False):
         self.token = token
+        self.enable_accessibility_actions = enable_accessibility_actions
+        self.enable_clipboard_observation = enable_clipboard_observation
         self.started_at = iso_now()
         self.events = []
+
+    def capabilities(self):
+        result = [
+            "health",
+            "frontmostAppObservation",
+            "openURL",
+            "openAllowlistedMacApp",
+            "wait",
+            "actionAuditLog",
+        ]
+        if self.enable_accessibility_actions:
+            result.extend(["typeText", "sendKeyCode", "scrollByArrowKey"])
+        if self.enable_clipboard_observation:
+            result.append("clipboardSummaryObservation")
+        return result
+
+    def mode(self):
+        flags = []
+        if self.enable_accessibility_actions:
+            flags.append("accessibility")
+        if self.enable_clipboard_observation:
+            flags.append("clipboard")
+        if not flags:
+            return "guarded-actions"
+        return "guarded-actions+" + "+".join(flags)
 
     def record(self, event):
         event["receivedAt"] = iso_now()
@@ -154,7 +247,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PrivateAgentMacBridge/0.2"
+    server_version = "PrivateAgentMacBridge/0.3"
 
     @property
     def state(self):
@@ -199,18 +292,11 @@ class Handler(BaseHTTPRequestHandler):
                 "service": "PrivateAgent Mac Bridge",
                 "startedAt": self.state.started_at,
                 "time": iso_now(),
-                "mode": "guarded-actions",
+                "mode": self.state.mode(),
                 "host": platform.node(),
                 "platform": platform.platform(),
                 "frontmostApp": frontmost_app(),
-                "capabilities": [
-                    "health",
-                    "frontmostAppObservation",
-                    "openURL",
-                    "openAllowlistedMacApp",
-                    "wait",
-                    "actionAuditLog",
-                ],
+                "capabilities": self.state.capabilities(),
             },
         )
 
@@ -228,7 +314,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/observation":
             self.state.record({"type": "observation", "body": body})
             goal = body.get("goal", "")
-            front_app = frontmost_app()
+            visible_text = [
+                "Mac bridge connected",
+                "Frontmost app: %s" % frontmost_app(),
+            ]
+            clip = clipboard_summary(self.state.enable_clipboard_observation)
+            if clip:
+                visible_text.append(clip)
             self._send_json(
                 200,
                 {
@@ -237,10 +329,7 @@ class Handler(BaseHTTPRequestHandler):
                     "observation": {
                         "source": "macBridge",
                         "userGoal": goal,
-                        "visibleText": [
-                            "Mac bridge connected",
-                            "Frontmost app: %s" % front_app,
-                        ],
+                        "visibleText": visible_text,
                         "controls": [],
                         "appContext": "Mac bridge helper on %s" % platform.node(),
                         "timestamp": iso_now(),
@@ -251,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/action":
             self.state.record({"type": "action", "body": body})
-            status, message = execute_action(body.get("action"))
+            status, message = execute_action(body.get("action"), self.state)
             self._send_json(200, {"status": status, "message": message})
             return
 
@@ -263,13 +352,19 @@ def main():
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--token", required=True)
+    parser.add_argument("--enable-accessibility-actions", action="store_true")
+    parser.add_argument("--enable-clipboard-observation", action="store_true")
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    server.state = BridgeState(args.token)
+    server.state = BridgeState(
+        args.token,
+        enable_accessibility_actions=args.enable_accessibility_actions,
+        enable_clipboard_observation=args.enable_clipboard_observation,
+    )
 
     print("PrivateAgent Mac Bridge listening on http://%s:%s" % (args.host, args.port))
-    print("Guarded action mode: low-risk Mac actions execute; privileged UI actions are logged.")
+    print("Mode: %s" % server.state.mode())
     sys.stdout.flush()
     try:
         server.serve_forever()
