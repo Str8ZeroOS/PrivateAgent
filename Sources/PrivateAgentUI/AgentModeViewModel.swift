@@ -7,13 +7,19 @@ import AgentCore
 public final class AgentModeViewModel {
     public var goal: String = ""
     public private(set) var plan: AgentPlan?
+    public private(set) var executionResults: [ActionExecutionResult] = []
     public private(set) var errorMessage: String?
     public var allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts]
 
     private let session: AgentSession
+    private let runner: PlanRunner
 
-    public init(session: AgentSession = AgentSession()) {
+    public init(
+        session: AgentSession = AgentSession(),
+        runner: PlanRunner = PlanRunner(executor: SystemActionExecutorFactory.makeDefaultExecutor())
+    ) {
         self.session = session
+        self.runner = runner
     }
 
     public func updateGoal(_ goal: String) {
@@ -22,6 +28,7 @@ public final class AgentModeViewModel {
 
     public func makePlan(visibleText: [String] = [], controls: [AgentControl] = [], appContext: String? = nil) async {
         errorMessage = nil
+        executionResults = []
         await session.updateAllowedModes(allowedModes)
 
         let observation = AgentObservation(
@@ -37,5 +44,11 @@ public final class AgentModeViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    public func runPlan() async {
+        guard let plan else { return }
+        errorMessage = nil
+        executionResults = await runner.run(plan)
     }
 }
