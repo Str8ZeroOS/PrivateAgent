@@ -16,6 +16,7 @@ let package = Package(
         .library(name: "ModelPack", targets: ["ModelPack"]),
         .library(name: "ModelHub", targets: ["ModelHub"]),
         .library(name: "FlashMoEBridge", targets: ["FlashMoEBridge"]),
+        .library(name: "AgentCore", targets: ["AgentCore"]),
         .library(name: "PrivateAgentUI", targets: ["PrivateAgentUI"]),
     ],
     targets: [
@@ -111,8 +112,12 @@ let package = Package(
             path: "Sources/FlashMoEBridge"
         ),
         .target(
+            name: "AgentCore",
+            path: "Sources/AgentCore"
+        ),
+        .target(
             name: "PrivateAgentUI",
-            dependencies: ["FlashMoEBridge", "ModelHub"],
+            dependencies: ["FlashMoEBridge", "ModelHub", "AgentCore"],
             path: "Sources/PrivateAgentUI"
         ),
 
