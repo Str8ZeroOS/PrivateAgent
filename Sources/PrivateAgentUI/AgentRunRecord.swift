@@ -8,7 +8,7 @@ public final class AgentRunRecord {
     public var createdAt: Date
     public var goal: String
     public var planningMode: String
-    public var allowedModes: [String]
+    public var allowedModesJSON: String
     public var observationJSON: String
     public var planJSON: String?
     public var diagnosticsJSON: String?
@@ -20,7 +20,7 @@ public final class AgentRunRecord {
         createdAt: Date = Date(),
         goal: String,
         planningMode: String,
-        allowedModes: [String],
+        allowedModesJSON: String,
         observationJSON: String,
         planJSON: String? = nil,
         diagnosticsJSON: String? = nil,
@@ -31,7 +31,7 @@ public final class AgentRunRecord {
         self.createdAt = createdAt
         self.goal = goal
         self.planningMode = planningMode
-        self.allowedModes = allowedModes
+        self.allowedModesJSON = allowedModesJSON
         self.observationJSON = observationJSON
         self.planJSON = planJSON
         self.diagnosticsJSON = diagnosticsJSON
