@@ -28,6 +28,7 @@ public final class AgentModeViewModel {
     public private(set) var plannerDiagnostics: AgentPlannerDiagnostics?
     public private(set) var executionResults: [ActionExecutionResult] = []
     public private(set) var errorMessage: String?
+    public private(set) var lastObservation: AgentObservation?
     public var allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts]
 
     private let session: AgentSession
@@ -62,6 +63,7 @@ public final class AgentModeViewModel {
             controls: controls,
             appContext: appContext
         )
+        lastObservation = observation
 
         do {
             switch planningMode {
