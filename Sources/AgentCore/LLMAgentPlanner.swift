@@ -1,6 +1,7 @@
 import Foundation
 
 public protocol AgentTextGenerating: Sendable {
+    @MainActor
     func generateText(prompt: String) async throws -> String
 }
 
