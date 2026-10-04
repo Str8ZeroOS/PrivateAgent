@@ -141,11 +141,12 @@ public struct AgentModeView: View {
 
     private func savePlanningRecord() {
         guard let observation = viewModel.lastObservation else { return }
+        let allowedModes = viewModel.allowedModes.map(\.rawValue)
 
         let record = AgentRunRecord(
             goal: viewModel.goal,
             planningMode: viewModel.planningMode.rawValue,
-            allowedModes: viewModel.allowedModes.map(\.rawValue),
+            allowedModesJSON: AgentRunRecordCoding.encode(allowedModes) ?? "[]",
             observationJSON: AgentRunRecordCoding.encode(observation) ?? "{}",
             planJSON: viewModel.plan.flatMap { AgentRunRecordCoding.encode($0) },
             diagnosticsJSON: viewModel.plannerDiagnostics.flatMap { AgentRunRecordCoding.encode($0) },
