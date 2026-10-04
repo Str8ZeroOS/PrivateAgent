@@ -1,11 +1,11 @@
 import Foundation
 
 public actor AgentSession {
-    private let planner: AgentPlanning
+    private let planner: any AgentPlanning
     private var allowedModes: [AutomationMode]
     private var currentPlan: AgentPlan?
 
-    public init(planner: AgentPlanning = RuleBasedAgentPlanner(), allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts]) {
+    public init(planner: any AgentPlanning = RuleBasedAgentPlanner(), allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts]) {
         self.planner = planner
         self.allowedModes = allowedModes
     }
