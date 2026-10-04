@@ -13,7 +13,7 @@ public enum PrivateAgentEngineTextGeneratorError: LocalizedError, Sendable {
     }
 }
 
-public struct PrivateAgentEngineTextGenerator: AgentTextGenerating {
+public struct PrivateAgentEngineTextGenerator: AgentTextGenerating, @unchecked Sendable {
     private let engine: PrivateAgentEngine
     private let config: GenerationConfig
 
