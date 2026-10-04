@@ -1,10 +1,10 @@
 # Development Unblockers
 
-This repo includes two guardrails so development does not stop when a local machine cannot clone or build the project.
+This repo includes guardrails so development does not stop when a local machine cannot clone or build the project.
 
 ## 1. GitHub Actions is the source of build truth
 
-`/.github/workflows/swift-ci.yml` runs on every push, pull request, and manual dispatch. It checks out the repo on macOS, selects Xcode 16 when available, then runs:
+`/.github/workflows/swift-ci.yml` runs on push, pull request, and manual dispatch. It checks out the repo on macOS, selects a stable Xcode release, then runs:
 
 ```bash
 swift package resolve
@@ -13,6 +13,18 @@ swift test -v
 ```
 
 Use this when a local workstation has TLS, Git, certificate, or platform limitations. The CI result is the authoritative compile/test signal.
+
+### If API-created commits do not trigger Actions
+
+Some GitHub App/API commit paths may not immediately attach Actions check-runs, especially on forks or repositories where Actions still need to be enabled. When no check appears on a commit:
+
+1. Open the repository on GitHub.
+2. Go to **Actions**.
+3. Select **Swift CI**.
+4. Click **Run workflow** on `main`.
+5. Treat the first compiler/test error as the next implementation target.
+
+A verification issue template is available at `.github/ISSUE_TEMPLATE/verification_failure.md` for recording the first actionable failure.
 
 ## 2. Windows archive bootstrap fallback
 
@@ -35,4 +47,4 @@ The script downloads the GitHub source archive through .NET `HttpClient`, expand
 
 ## If both local fetch paths fail
 
-Use GitHub Actions. Push changes through the GitHub API/connector or from another machine, then check the Swift CI workflow. This keeps development moving even when one host cannot establish GitHub TLS sessions.
+Use GitHub Actions. Push changes through the GitHub API/connector or from another machine, then manually run **Swift CI** from the Actions tab if no check-run appears. This keeps development moving even when one host cannot establish GitHub TLS sessions.
