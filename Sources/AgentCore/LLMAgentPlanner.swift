@@ -7,12 +7,12 @@ public protocol AgentTextGenerating: Sendable {
 public struct LLMAgentPlanner<Generator: AgentTextGenerating>: AgentPlanning {
     private let generator: Generator
     private let promptCompiler: AgentPromptCompiler
-    private let decoder: AgentPlanDecoding
+    private let decoder: any AgentPlanDecoding
 
     public init(
         generator: Generator,
         promptCompiler: AgentPromptCompiler = AgentPromptCompiler(),
-        decoder: AgentPlanDecoding = JSONAgentPlanDecoder()
+        decoder: any AgentPlanDecoding = JSONAgentPlanDecoder()
     ) {
         self.generator = generator
         self.promptCompiler = promptCompiler
