@@ -1,11 +1,14 @@
 import SwiftUI
+import SwiftData
 import AgentCore
 import FlashMoEBridge
 
 public struct AgentModeView: View {
     @Environment(PrivateAgentEngine.self) private var engine
+    @Environment(\.modelContext) private var modelContext
     @State private var viewModel = AgentModeViewModel()
     @State private var isApprovalDialogPresented = false
+    @State private var currentRunRecord: AgentRunRecord?
 
     public init() {}
 
@@ -29,7 +32,10 @@ public struct AgentModeView: View {
                     .lineLimit(3...6)
 
                 Button("Make Plan") {
-                    Task { await viewModel.makePlan(engine: engine, appContext: "PrivateAgent") }
+                    Task {
+                        await viewModel.makePlan(engine: engine, appContext: "PrivateAgent")
+                        savePlanningRecord()
+                    }
                 }
                 .disabled(isMakePlanDisabled)
             }
@@ -61,7 +67,7 @@ public struct AgentModeView: View {
                         if plan.requiresUserApproval {
                             isApprovalDialogPresented = true
                         } else {
-                            Task { await viewModel.runPlan() }
+                            Task { await runPlanAndSaveHistory() }
                         }
                     }
                 }
@@ -107,7 +113,7 @@ public struct AgentModeView: View {
             titleVisibility: .visible
         ) {
             Button("Run Plan", role: .destructive) {
-                Task { await viewModel.runPlan() }
+                Task { await runPlanAndSaveHistory() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -119,6 +125,36 @@ public struct AgentModeView: View {
         let emptyGoal = viewModel.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let localModelUnavailable = viewModel.planningMode == .localModel && engine.state != .ready
         return emptyGoal || localModelUnavailable
+    }
+
+    private func runPlanAndSaveHistory() async {
+        await viewModel.runPlan()
+        updateExecutionHistory()
+    }
+
+    private func savePlanningRecord() {
+        guard let observation = viewModel.lastObservation else { return }
+
+        let record = AgentRunRecord(
+            goal: viewModel.goal,
+            planningMode: viewModel.planningMode.rawValue,
+            allowedModes: viewModel.allowedModes.map(\.rawValue),
+            observationJSON: AgentRunRecordCoding.encode(observation) ?? "{}",
+            planJSON: viewModel.plan.flatMap { AgentRunRecordCoding.encode($0) },
+            diagnosticsJSON: viewModel.plannerDiagnostics.flatMap { AgentRunRecordCoding.encode($0) },
+            errorMessage: viewModel.errorMessage
+        )
+
+        modelContext.insert(record)
+        currentRunRecord = record
+        try? modelContext.save()
+    }
+
+    private func updateExecutionHistory() {
+        guard let currentRunRecord else { return }
+        currentRunRecord.executionResultsJSON = AgentRunRecordCoding.encode(viewModel.executionResults)
+        currentRunRecord.errorMessage = viewModel.errorMessage
+        try? modelContext.save()
     }
 
     private func binding(for mode: AutomationMode) -> Binding<Bool> {
@@ -167,4 +203,5 @@ public struct AgentModeView: View {
         AgentModeView()
             .environment(PrivateAgentEngine())
     }
+    .modelContainer(for: [AgentRunRecord.self], inMemory: true)
 }
