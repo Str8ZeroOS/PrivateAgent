@@ -10,3 +10,5 @@ After each implementation batch:
 This keeps build verification independent from any single local workstation. In particular, it avoids blocking on Windows schannel failures when GitHub Actions can perform a clean macOS checkout and Swift build.
 
 Last CI trigger note: this file may be touched with a no-op documentation update when a fresh workflow run is needed after API-based changes.
+
+Current trigger purpose: verify Agent Mode bridge settings and health-check wiring.
