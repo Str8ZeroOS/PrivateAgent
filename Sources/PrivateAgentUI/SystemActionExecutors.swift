@@ -1,6 +1,8 @@
 import Foundation
-import UIKit
 import AgentCore
+
+#if canImport(UIKit)
+import UIKit
 
 public struct URLActionExecutor: AgentActionExecuting {
     public init() {}
@@ -46,5 +48,20 @@ public struct ShortcutActionExecutor: AgentActionExecuting {
 
         await UIApplication.shared.open(url)
         return ActionExecutionResult(action: action, status: .completed, message: "Requested shortcut: \(shortcutName)")
+    }
+}
+#endif
+
+public enum SystemActionExecutorFactory {
+    public static func makeDefaultExecutor() -> any AgentActionExecuting {
+        #if canImport(UIKit)
+        return ActionExecutorRouter(executors: [
+            URLActionExecutor(),
+            ShortcutActionExecutor(),
+            PlanningOnlyActionExecutor()
+        ])
+        #else
+        return PlanningOnlyActionExecutor()
+        #endif
     }
 }
