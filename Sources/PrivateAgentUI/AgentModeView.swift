@@ -1,7 +1,9 @@
 import SwiftUI
 import AgentCore
+import FlashMoEBridge
 
 public struct AgentModeView: View {
+    @Environment(PrivateAgentEngine.self) private var engine
     @State private var viewModel = AgentModeViewModel()
 
     public init() {}
@@ -9,13 +11,26 @@ public struct AgentModeView: View {
     public var body: some View {
         Form {
             Section("Goal") {
+                Picker("Planner", selection: $viewModel.planningMode) {
+                    ForEach(AgentPlanningMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if viewModel.planningMode == .localModel && engine.state != .ready {
+                    Text("Load a model before using local planning.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 TextField("What should PrivateAgent do?", text: $viewModel.goal, axis: .vertical)
                     .lineLimit(3...6)
 
                 Button("Make Plan") {
-                    Task { await viewModel.makePlan(appContext: "PrivateAgent") }
+                    Task { await viewModel.makePlan(engine: engine, appContext: "PrivateAgent") }
                 }
-                .disabled(viewModel.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(isMakePlanDisabled)
             }
 
             Section("Allowed Modes") {
@@ -79,6 +94,12 @@ public struct AgentModeView: View {
         .navigationTitle("Agent Mode")
     }
 
+    private var isMakePlanDisabled: Bool {
+        let emptyGoal = viewModel.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let localModelUnavailable = viewModel.planningMode == .localModel && engine.state != .ready
+        return emptyGoal || localModelUnavailable
+    }
+
     private func binding(for mode: AutomationMode) -> Binding<Bool> {
         Binding(
             get: { viewModel.allowedModes.contains(mode) },
@@ -123,5 +144,6 @@ public struct AgentModeView: View {
 #Preview {
     NavigationStack {
         AgentModeView()
+            .environment(PrivateAgentEngine())
     }
 }
