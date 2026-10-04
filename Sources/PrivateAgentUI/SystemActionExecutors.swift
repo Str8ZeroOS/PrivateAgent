@@ -17,11 +17,20 @@ public struct URLActionExecutor: AgentActionExecuting {
             return ActionExecutionResult(action: action, status: .skipped, message: "Unsupported action.")
         }
 
-        guard let url = URL(string: rawURL), await UIApplication.shared.canOpenURL(url) else {
-            return ActionExecutionResult(action: action, status: .failed, message: "Invalid or unsupported URL.")
+        guard let url = URL(string: rawURL) else {
+            return ActionExecutionResult(action: action, status: .failed, message: "Invalid URL.")
         }
 
-        await UIApplication.shared.open(url)
+        let canOpen = await MainActor.run {
+            UIApplication.shared.canOpenURL(url)
+        }
+        guard canOpen else {
+            return ActionExecutionResult(action: action, status: .failed, message: "Unsupported URL.")
+        }
+
+        await MainActor.run {
+            UIApplication.shared.open(url)
+        }
         return ActionExecutionResult(action: action, status: .completed, message: "Opened URL.")
     }
 }
@@ -42,11 +51,20 @@ public struct ShortcutActionExecutor: AgentActionExecuting {
         var components = URLComponents(string: "shortcuts://run-shortcut")
         components?.queryItems = [URLQueryItem(name: "name", value: shortcutName)]
 
-        guard let url = components?.url, await UIApplication.shared.canOpenURL(url) else {
-            return ActionExecutionResult(action: action, status: .failed, message: "Shortcuts is unavailable or the shortcut URL could not be created.")
+        guard let url = components?.url else {
+            return ActionExecutionResult(action: action, status: .failed, message: "Shortcut URL could not be created.")
         }
 
-        await UIApplication.shared.open(url)
+        let canOpen = await MainActor.run {
+            UIApplication.shared.canOpenURL(url)
+        }
+        guard canOpen else {
+            return ActionExecutionResult(action: action, status: .failed, message: "Shortcuts is unavailable.")
+        }
+
+        await MainActor.run {
+            UIApplication.shared.open(url)
+        }
         return ActionExecutionResult(action: action, status: .completed, message: "Requested shortcut: \(shortcutName)")
     }
 }
