@@ -3,16 +3,10 @@ import Foundation
 public struct LocalBridgeClient: MacBridgeClient {
     private let baseURL: URL
     private let urlSession: URLSession
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
 
     public init(baseURL: URL, urlSession: URLSession = .shared) {
         self.baseURL = baseURL
         self.urlSession = urlSession
-        self.encoder = JSONEncoder()
-        self.decoder = JSONDecoder()
-        self.encoder.dateEncodingStrategy = .iso8601
-        self.decoder.dateDecodingStrategy = .iso8601
     }
 
     public func requestObservation(_ request: MacBridgeObservationRequest) async throws -> MacBridgeResponse {
@@ -24,6 +18,9 @@ public struct LocalBridgeClient: MacBridgeClient {
     }
 
     private func post<Request: Encodable>(_ body: Request, path: String) async throws -> MacBridgeResponse {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
         let url = baseURL.appending(path: path)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -35,6 +32,8 @@ public struct LocalBridgeClient: MacBridgeClient {
             throw LocalBridgeClientError.invalidResponse
         }
 
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(MacBridgeResponse.self, from: data)
     }
 }
