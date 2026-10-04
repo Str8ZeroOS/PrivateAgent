@@ -144,5 +144,9 @@ let package = Package(
             name: "ModelHubTests",
             dependencies: ["ModelHub"]
         ),
+        .testTarget(
+            name: "AgentCoreTests",
+            dependencies: ["AgentCore"]
+        ),
     ]
 )
