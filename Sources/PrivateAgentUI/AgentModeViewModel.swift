@@ -1,11 +1,29 @@
 import Foundation
 import Observation
 import AgentCore
+import FlashMoEBridge
+
+public enum AgentPlanningMode: String, CaseIterable, Identifiable, Sendable {
+    case ruleBased
+    case localModel
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .ruleBased:
+            return "Rules"
+        case .localModel:
+            return "Local Model"
+        }
+    }
+}
 
 @MainActor
 @Observable
 public final class AgentModeViewModel {
     public var goal: String = ""
+    public var planningMode: AgentPlanningMode = .ruleBased
     public private(set) var plan: AgentPlan?
     public private(set) var executionResults: [ActionExecutionResult] = []
     public private(set) var errorMessage: String?
@@ -26,10 +44,14 @@ public final class AgentModeViewModel {
         self.goal = goal
     }
 
-    public func makePlan(visibleText: [String] = [], controls: [AgentControl] = [], appContext: String? = nil) async {
+    public func makePlan(
+        engine: PrivateAgentEngine? = nil,
+        visibleText: [String] = [],
+        controls: [AgentControl] = [],
+        appContext: String? = nil
+    ) async {
         errorMessage = nil
         executionResults = []
-        await session.updateAllowedModes(allowedModes)
 
         let observation = AgentObservation(
             source: .privateAgentApp,
@@ -40,8 +62,20 @@ public final class AgentModeViewModel {
         )
 
         do {
-            plan = try await session.plan(for: observation)
+            switch planningMode {
+            case .ruleBased:
+                await session.updateAllowedModes(allowedModes)
+                plan = try await session.plan(for: observation)
+            case .localModel:
+                guard let engine else {
+                    throw PrivateAgentEngineTextGeneratorError.modelNotReady
+                }
+                let generator = PrivateAgentEngineTextGenerator(engine: engine)
+                let planner = LLMAgentPlanner(generator: generator)
+                plan = try await planner.makePlan(for: observation, allowedModes: allowedModes)
+            }
         } catch {
+            plan = nil
             errorMessage = error.localizedDescription
         }
     }
