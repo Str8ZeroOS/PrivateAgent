@@ -5,6 +5,7 @@ import FlashMoEBridge
 public struct AgentModeView: View {
     @Environment(PrivateAgentEngine.self) private var engine
     @State private var viewModel = AgentModeViewModel()
+    @State private var isApprovalDialogPresented = false
 
     public init() {}
 
@@ -53,7 +54,11 @@ public struct AgentModeView: View {
                     LabeledContent("Approval", value: plan.requiresUserApproval ? "Required" : "Not required")
 
                     Button(plan.requiresUserApproval ? "Approve and Run Plan" : "Run Plan") {
-                        Task { await viewModel.runPlan() }
+                        if plan.requiresUserApproval {
+                            isApprovalDialogPresented = true
+                        } else {
+                            Task { await viewModel.runPlan() }
+                        }
                     }
                 }
 
@@ -92,6 +97,18 @@ public struct AgentModeView: View {
             }
         }
         .navigationTitle("Agent Mode")
+        .confirmationDialog(
+            "Run this plan?",
+            isPresented: $isApprovalDialogPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Run Plan", role: .destructive) {
+                Task { await viewModel.runPlan() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This plan requires approval because it may use external control, sensitive actions, or a higher-risk automation mode.")
+        }
     }
 
     private var isMakePlanDisabled: Bool {
