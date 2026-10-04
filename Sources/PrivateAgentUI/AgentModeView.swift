@@ -108,7 +108,7 @@ public struct AgentModeView: View {
         }
         .navigationTitle("Agent Mode")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem {
                 NavigationLink("History") {
                     AgentHistoryView()
                 }
