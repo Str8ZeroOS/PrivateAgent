@@ -5,6 +5,7 @@ import FlashMoEBridge
 public struct ContentView: View {
     @State private var engine = PrivateAgentEngine()
     @State private var path = NavigationPath()
+    @State private var isAgentModePresented = false
     @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
@@ -15,6 +16,25 @@ public struct ContentView: View {
                 .navigationDestination(for: UUID.self) { conversationId in
                     ChatView(conversationId: conversationId)
                 }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Agent") {
+                            isAgentModePresented = true
+                        }
+                    }
+                }
+        }
+        .sheet(isPresented: $isAgentModePresented) {
+            NavigationStack {
+                AgentModeView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") {
+                                isAgentModePresented = false
+                            }
+                        }
+                    }
+            }
         }
         .environment(engine)
         .modelContainer(for: [Conversation.self, Message.self])
