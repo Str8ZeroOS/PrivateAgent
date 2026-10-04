@@ -1,18 +1,39 @@
 # Mac Bridge Protocol
 
-The Mac bridge is the App-Store-safe path for Android-like iPhone automation. PrivateAgent on iOS stays honest about platform limits and delegates cross-app observation/control to a trusted local Mac process.
+The Mac bridge is the App-Store-safe path for Android-like iPhone automation. PrivateAgent on iOS stays honest about platform limits and delegates blocked or cross-device work to a trusted local Mac process.
 
 ## Base URL
 
-The default development shape is a loopback HTTP service, for example:
+The default development shape is a local-network HTTP service, for example:
 
 ```text
-http://127.0.0.1:8765
+http://192.168.12.110:8765
 ```
 
-Production pairing should add device authentication and local-network trust before enabling actions.
+The development helper requires a bearer token on every request:
+
+```text
+Authorization: Bearer <pairing-token>
+```
+
+Production pairing should add stronger device identity, token rotation, local-network trust, and a user-visible approval ledger before enabling privileged actions.
 
 ## Endpoints
+
+### `GET /health`
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "service": "PrivateAgent Mac Bridge",
+  "mode": "guarded-actions",
+  "host": "Jay.lan",
+  "frontmostApp": "Safari",
+  "capabilities": ["health", "frontmostAppObservation", "openURL", "openAllowlistedMacApp", "wait", "actionAuditLog"]
+}
+```
 
 ### `POST /observation`
 
@@ -31,15 +52,13 @@ Response:
 ```json
 {
   "status": "completed",
-  "message": "Captured current mirrored iPhone state.",
+  "message": "Captured Mac bridge context.",
   "observation": {
     "source": "macBridge",
     "userGoal": "Open YouTube and tap the latest Tech Jarves video",
-    "visibleText": ["YouTube", "Tech Jarves"],
-    "controls": [
-      { "id": "latest-video", "label": "I Put AI Agents on My Android Phone", "role": "button", "isEnabled": true }
-    ],
-    "appContext": "iPhone Mirroring",
+    "visibleText": ["Mac bridge connected", "Frontmost app: Safari"],
+    "controls": [],
+    "appContext": "Mac bridge helper on Jay.lan",
     "timestamp": "2026-10-04T12:00:01Z"
   }
 }
@@ -52,7 +71,7 @@ Request:
 ```json
 {
   "sessionId": "00000000-0000-0000-0000-000000000001",
-  "action": { "tap": { "controlId": "latest-video" } },
+  "action": { "openURL": { "_0": "https://youtube.com/@TechJarves" } },
   "requiresUserApproval": true
 }
 ```
@@ -62,22 +81,39 @@ Response:
 ```json
 {
   "status": "completed",
-  "message": "Tapped latest-video."
+  "message": "Opened URL on Mac: https://youtube.com/@TechJarves"
 }
 ```
 
-## Required bridge behavior
+## Current Guarded Helper
 
-- Refuse actions unless the iOS app has paired with the Mac helper.
+`Bridge/mac_bridge_helper.py` is intentionally conservative and supports older Macs that only have Python 2.7 available. It can:
+
+- report bridge health and available capabilities;
+- report the frontmost Mac app as an observation signal;
+- open `http://` and `https://` URLs;
+- open a small allowlist of built-in Mac apps;
+- wait for a bounded duration;
+- log handoff, tap, type, and scroll requests without silently performing privileged UI control.
+
+It does not read the clipboard, inject arbitrary keystrokes, scrape screen contents, or control the iPhone UI. Those require an explicitly approved adapter because they are privacy-sensitive and can affect accounts or data.
+
+## Required Bridge Behavior
+
+- Refuse requests unless the iOS app has paired with the Mac helper.
 - Keep user-visible logs of observations and actions.
 - Treat tap/type/scroll actions as privileged.
 - Require approval for account, purchase, destructive, or privacy-sensitive workflows.
-- Return stable control IDs for the current observation frame.
+- Return stable control IDs for a real observation adapter's current frame.
 - Return `failed` when the screen has changed enough that a control ID no longer resolves.
 
-## Suggested Mac-side adapters
+## Next Adapters
 
-- iPhone Mirroring plus accessibility inspection where available.
-- XCTest/WebDriverAgent for developer devices.
-- Screen capture plus OCR/vision as a fallback.
-- Native macOS automation only for the helper UI, not for hidden actions.
+To get closer to Android-style automation, add adapters in this order:
+
+1. **iPhone Mirroring or screen observation adapter**: capture visible state and produce stable controls.
+2. **XCTest/WebDriverAgent adapter**: operate on developer devices where test automation is allowed.
+3. **Accessibility adapter**: perform tap/type/scroll only after explicit user approval and macOS permission setup.
+4. **OCR/vision fallback**: identify visible text when structured accessibility metadata is unavailable.
+
+Each adapter should plug into the same `/observation` and `/action` protocol instead of changing the iOS planning layer.
