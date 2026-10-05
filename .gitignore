@@ -18,6 +18,10 @@ Package.resolved
 .DS_Store
 Thumbs.db
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Models (downloaded, not committed)
 Models/
 *.bin
