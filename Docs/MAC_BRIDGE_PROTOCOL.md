@@ -96,7 +96,13 @@ Response:
 - wait for a bounded duration;
 - log handoff, tap, type, and scroll requests without silently performing privileged UI control.
 
-It does not read the clipboard, inject arbitrary keystrokes, scrape screen contents, or control the iPhone UI. Those require an explicitly approved adapter because they are privacy-sensitive and can affect accounts or data.
+Privileged adapters stay off unless the helper is launched with explicit flags:
+
+- `--enable-accessibility-actions`: type, arrow-key scroll, key codes, and AX click by control id/label
+- `--enable-ax-observation`: include frontmost-app System Events UI element names as observation controls
+- `--enable-clipboard-observation`: include a short clipboard summary
+
+Without those flags the helper still does not read the clipboard, inject keystrokes, scrape screen contents, or click UI elements. It never controls the iPhone UI directly.
 
 ## Required Bridge Behavior
 

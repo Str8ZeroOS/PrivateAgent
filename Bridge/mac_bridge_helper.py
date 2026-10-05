@@ -94,6 +94,64 @@ def frontmost_app():
     return "unknown (%s)" % err if err else "unknown"
 
 
+def ax_element_names():
+    app = apple_string(frontmost_app())
+    script = 'tell application "System Events" to tell process "%s" to get name of every UI element of window 1' % app
+    ok, out, err = run_osascript(script, timeout=6)
+    if not ok or not out:
+        return [], err or "Accessibility observation unavailable."
+    names = []
+    for part in out.split(","):
+        name = part.strip()
+        if name and name != "missing value" and name not in names:
+            names.append(name)
+    return names[:40], None
+
+
+def ax_controls():
+    names, err = ax_element_names()
+    controls = []
+    for index, name in enumerate(names):
+        controls.append({
+            "id": "ax-%d" % index,
+            "label": name,
+            "role": "unknown",
+            "isEnabled": True,
+        })
+    return controls, err
+
+
+def tap_ax(control_id):
+    names, err = ax_element_names()
+    if err and not names:
+        return "failed", "No AX controls: %s" % err
+    target = None
+    if isinstance(control_id, str) and control_id.startswith("ax-"):
+        try:
+            index = int(control_id.split("-", 1)[1])
+            if 0 <= index < len(names):
+                target = names[index]
+        except Exception:
+            target = None
+    if target is None:
+        lowered = str(control_id or "").lower()
+        for name in names:
+            if name.lower() == lowered or lowered in name.lower():
+                target = name
+                break
+    if target is None:
+        return "failed", "Control not found: %s" % control_id
+    app = apple_string(frontmost_app())
+    script = 'tell application "System Events" to tell process "%s" to click UI element "%s" of window 1' % (
+        app,
+        apple_string(target),
+    )
+    ok, _, click_err = run_osascript(script, timeout=6)
+    if ok:
+        return "completed", "Clicked AX control %s" % target
+    return "failed", "AX click failed. Grant Accessibility permission: %s" % click_err
+
+
 def clipboard_summary(enabled):
     if not enabled:
         return None
@@ -195,17 +253,26 @@ def execute_action(action, state):
             return "skipped", "Key codes require --enable-accessibility-actions."
         return key_code(payload.get("code") or payload.get("_0"))
     if name == "tap":
-        return "skipped", "Tap still requires a coordinate/control adapter; current bridge supports keyboard-style accessibility actions only."
+        if not state.enable_accessibility_actions:
+            return "skipped", "Tap requires --enable-accessibility-actions."
+        return tap_ax(payload.get("controlId") or payload.get("_0"))
     if name == "runShortcut":
         return "failed", "Shortcuts CLI is not available on this macOS version."
     return "failed", "Unsupported bridge action: %s" % name
 
 
 class BridgeState(object):
-    def __init__(self, token, enable_accessibility_actions=False, enable_clipboard_observation=False):
+    def __init__(
+        self,
+        token,
+        enable_accessibility_actions=False,
+        enable_clipboard_observation=False,
+        enable_ax_observation=False,
+    ):
         self.token = token
         self.enable_accessibility_actions = enable_accessibility_actions
         self.enable_clipboard_observation = enable_clipboard_observation
+        self.enable_ax_observation = enable_ax_observation
         self.started_at = iso_now()
         self.events = []
 
@@ -222,6 +289,10 @@ class BridgeState(object):
             result.extend(["typeText", "sendKeyCode", "scrollByArrowKey"])
         if self.enable_clipboard_observation:
             result.append("clipboardSummaryObservation")
+        if self.enable_ax_observation:
+            result.append("axTreeObservation")
+        if self.enable_accessibility_actions:
+            result.append("axClick")
         return result
 
     def mode(self):
@@ -230,6 +301,8 @@ class BridgeState(object):
             flags.append("accessibility")
         if self.enable_clipboard_observation:
             flags.append("clipboard")
+        if self.enable_ax_observation:
+            flags.append("ax")
         if not flags:
             return "guarded-actions"
         return "guarded-actions+" + "+".join(flags)
@@ -321,6 +394,12 @@ class Handler(BaseHTTPRequestHandler):
             clip = clipboard_summary(self.state.enable_clipboard_observation)
             if clip:
                 visible_text.append(clip)
+            controls = []
+            if self.state.enable_ax_observation:
+                controls, ax_err = ax_controls()
+                visible_text.extend([control["label"] for control in controls[:12]])
+                if ax_err and not controls:
+                    visible_text.append(ax_err)
             self._send_json(
                 200,
                 {
@@ -330,7 +409,7 @@ class Handler(BaseHTTPRequestHandler):
                         "source": "macBridge",
                         "userGoal": goal,
                         "visibleText": visible_text,
-                        "controls": [],
+                        "controls": controls,
                         "appContext": "Mac bridge helper on %s" % platform.node(),
                         "timestamp": iso_now(),
                     },
@@ -354,6 +433,7 @@ def main():
     parser.add_argument("--token", required=True)
     parser.add_argument("--enable-accessibility-actions", action="store_true")
     parser.add_argument("--enable-clipboard-observation", action="store_true")
+    parser.add_argument("--enable-ax-observation", action="store_true")
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
@@ -361,6 +441,7 @@ def main():
         args.token,
         enable_accessibility_actions=args.enable_accessibility_actions,
         enable_clipboard_observation=args.enable_clipboard_observation,
+        enable_ax_observation=args.enable_ax_observation,
     )
 
     print("PrivateAgent Mac Bridge listening on http://%s:%s" % (args.host, args.port))

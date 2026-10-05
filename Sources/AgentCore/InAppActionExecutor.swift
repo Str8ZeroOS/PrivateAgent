@@ -1,7 +1,15 @@
 import Foundation
 
 public struct InAppActionExecutor: AgentActionExecuting {
-    public init() {}
+    private let navigator: any InAppNavigating
+
+    public init(navigator: any InAppNavigating) {
+        self.navigator = navigator
+    }
+
+    public init() {
+        self.navigator = InAppWorkspaceStore()
+    }
 
     public func canExecute(_ action: AgentAction) -> Bool {
         switch action {
@@ -29,34 +37,25 @@ public struct InAppActionExecutor: AgentActionExecuting {
         case .askUser(let question):
             return ActionExecutionResult(action: action, status: .completed, message: question)
         case .tap(let controlId):
-            guard let control = InAppWorkspace.control(id: controlId) else {
-                return ActionExecutionResult(action: action, status: .failed, message: "Unknown in-app control \(controlId).")
-            }
-            let screen = InAppWorkspace.screen(forControlId: controlId)
-            let screenName = screen?.rawValue ?? "unknown"
+            let result = await navigator.perform(.tap(controlId: controlId))
             return ActionExecutionResult(
                 action: action,
-                status: .completed,
-                message: "Activated in-app control \(control.label). screen=\(screenName)"
+                status: result.succeeded ? .completed : .failed,
+                message: result.message
             )
         case .type(let controlId, let text):
-            guard let control = InAppWorkspace.control(id: controlId) else {
-                return ActionExecutionResult(action: action, status: .failed, message: "Unknown in-app field \(controlId).")
-            }
+            let result = await navigator.perform(.type(controlId: controlId, text: text))
             return ActionExecutionResult(
                 action: action,
-                status: .completed,
-                message: "Typed into \(control.label): \(text)"
+                status: result.succeeded ? .completed : .failed,
+                message: result.message
             )
         case .invokeAppIntent(let name):
-            guard let intent = FirstPartyAppIntents.resolve(name) else {
-                return ActionExecutionResult(action: action, status: .skipped, message: "Unknown first-party App Intent.")
-            }
-            let screen = intent.screen.map { " screen=\($0.rawValue)" } ?? ""
+            let result = await navigator.perform(.invokeIntent(name))
             return ActionExecutionResult(
                 action: action,
-                status: .completed,
-                message: "Invoked first-party App Intent \(intent.name).\(screen)"
+                status: result.succeeded ? .completed : .skipped,
+                message: result.message
             )
         case .openURL, .runShortcut, .scroll, .handoff:
             return ActionExecutionResult(action: action, status: .skipped, message: "In-app executor does not handle this action.")
@@ -66,6 +65,10 @@ public struct InAppActionExecutor: AgentActionExecuting {
 
 public struct AppIntentActionExecutor: AgentActionExecuting {
     private let fallback: InAppActionExecutor
+
+    public init(navigator: any InAppNavigating) {
+        self.fallback = InAppActionExecutor(navigator: navigator)
+    }
 
     public init() {
         self.fallback = InAppActionExecutor()

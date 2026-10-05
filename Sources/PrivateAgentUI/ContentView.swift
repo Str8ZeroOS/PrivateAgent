@@ -1,16 +1,18 @@
 import SwiftUI
 import SwiftData
+import AgentCore
 import FlashMoEBridge
 
 public struct ContentView: View {
     @State private var engine = PrivateAgentEngine()
     @State private var path = NavigationPath()
-    @State private var isAgentModePresented = false
+    @State private var router = AppRouter.shared
     @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
 
     public var body: some View {
+        @Bindable var router = router
         NavigationStack(path: $path) {
             ConversationListView(path: $path)
                 .navigationDestination(for: UUID.self) { conversationId in
@@ -19,24 +21,45 @@ public struct ContentView: View {
                 .toolbar {
                     ToolbarItem {
                         Button("Agent") {
-                            isAgentModePresented = true
+                            router.open(.agentMode)
                         }
                     }
                 }
         }
-        .sheet(isPresented: $isAgentModePresented) {
+        .sheet(isPresented: $router.isAgentModePresented) {
             NavigationStack {
                 AgentModeView()
                     .toolbar {
                         ToolbarItem {
                             Button("Done") {
-                                isAgentModePresented = false
+                                router.isAgentModePresented = false
                             }
                         }
                     }
             }
         }
+        .sheet(isPresented: $router.isModelsPresented) {
+            NavigationStack {
+                ModelManagerView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { router.isModelsPresented = false }
+                        }
+                    }
+            }
+        }
+        .sheet(isPresented: $router.isSettingsPresented) {
+            NavigationStack {
+                SettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { router.isSettingsPresented = false }
+                        }
+                    }
+            }
+        }
         .environment(engine)
+        .environment(router)
         .modelContainer(for: [Conversation.self, Message.self, AgentRunRecord.self])
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background && engine.state == .generating {

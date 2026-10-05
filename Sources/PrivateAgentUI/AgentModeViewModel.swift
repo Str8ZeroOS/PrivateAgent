@@ -92,14 +92,10 @@ public final class AgentModeViewModel {
         plannerDiagnostics = nil
         executionResults = []
 
-        let workspace = InAppWorkspace.observation(goal: goal)
-        let observation = AgentObservation(
-            source: .privateAgentApp,
-            userGoal: goal,
-            visibleText: visibleText.isEmpty ? workspace.visibleText : visibleText,
-            controls: controls.isEmpty ? workspace.controls : controls,
-            appContext: appContext ?? workspace.appContext
-        )
+        var observation = await InAppWorkspaceStore.shared.snapshot(goal: goal)
+        if !visibleText.isEmpty { observation.visibleText = visibleText }
+        if !controls.isEmpty { observation.controls = controls }
+        if let appContext { observation.appContext = appContext }
         lastObservation = observation
 
         do {
@@ -169,11 +165,7 @@ public final class AgentModeViewModel {
 
         let loop = AgentLoop(
             configuration: AgentLoopConfiguration(
-                observer: InAppObserver(
-                    visibleText: visibleText,
-                    controls: controls,
-                    appContext: appContext
-                ),
+                observer: LiveWorkspaceObserver(store: .shared),
                 planner: planner,
                 executor: SystemActionExecutorFactory.makeDefaultExecutor(),
                 approval: broker,

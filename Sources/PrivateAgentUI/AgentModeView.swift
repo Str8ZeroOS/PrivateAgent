@@ -57,6 +57,7 @@ public struct AgentModeView: View {
 
             Section("Live State") {
                 LabeledContent("Phase", value: viewModel.phase.title)
+                LabeledContent("Workspace", value: viewModel.lastObservation?.appContext ?? "PrivateAgent.agentMode")
                 LabeledContent("Loop step", value: "\(viewModel.loopSnapshot?.agentStepCount ?? 0) / \(AgentLoopLimits.default.maxAgentSteps)")
                 if viewModel.isRunning {
                     ProgressView()
@@ -168,6 +169,9 @@ public struct AgentModeView: View {
             }
         }
         .navigationTitle("Agent Mode")
+        .onAppear {
+            Task { _ = await InAppWorkspaceStore.shared.perform(.open(.agentMode)) }
+        }
         .toolbar {
             ToolbarItem {
                 NavigationLink("History") {

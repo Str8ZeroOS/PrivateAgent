@@ -73,17 +73,18 @@ public struct ShortcutActionExecutor: AgentActionExecuting {
 public enum SystemActionExecutorFactory {
     public static func makeDefaultExecutor() -> any AgentActionExecuting {
         #if canImport(UIKit)
+        let navigator = AppRouterNavigator()
         return ActionExecutorRouter(executors: [
-            InAppActionExecutor(),
-            AppIntentActionExecutor(),
+            InAppActionExecutor(navigator: navigator),
+            AppIntentActionExecutor(navigator: navigator),
             URLActionExecutor(),
             ShortcutActionExecutor(),
             PlanningOnlyActionExecutor()
         ])
         #else
         return ActionExecutorRouter(executors: [
-            InAppActionExecutor(),
-            AppIntentActionExecutor(),
+            InAppActionExecutor(navigator: InAppWorkspaceStore.shared),
+            AppIntentActionExecutor(navigator: InAppWorkspaceStore.shared),
             PlanningOnlyActionExecutor()
         ])
         #endif

@@ -1,13 +1,13 @@
 import SwiftUI
 import SwiftData
+import AgentCore
 
 struct ConversationListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppRouter.self) private var router
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
 
     @State private var searchText = ""
-    @State private var showSettings = false
-    @State private var showModels = false
     @Binding var path: NavigationPath
 
     var filteredConversations: [Conversation] {
@@ -18,6 +18,7 @@ struct ConversationListView: View {
     }
 
     var body: some View {
+        @Bindable var router = router
         List {
             ForEach(filteredConversations) { conversation in
                 NavigationLink(value: conversation.id) {
@@ -46,14 +47,14 @@ struct ConversationListView: View {
             }
             ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow
                 Button {
-                    showModels = true
+                    router.open(.models)
                 } label: {
                     Image(systemName: "square.grid.2x2")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow
                 Button {
-                    showSettings = true
+                    router.open(.settings)
                 } label: {
                     Image(systemName: "gear")
                 }
@@ -71,39 +72,27 @@ struct ConversationListView: View {
             }
             ToolbarItem(placement: .automatic) {
                 Button {
-                    showModels = true
+                    router.open(.models)
                 } label: {
                     Image(systemName: "square.grid.2x2")
                 }
             }
             ToolbarItem(placement: .automatic) {
                 Button {
-                    showSettings = true
+                    router.open(.settings)
                 } label: {
                     Image(systemName: "gear")
                 }
             }
             #endif
         }
-        .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                SettingsView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showSettings = false }
-                        }
-                    }
-            }
+        .onChange(of: router.startChatRequested) { _, requested in
+            guard requested else { return }
+            router.startChatRequested = false
+            newConversation()
         }
-        .sheet(isPresented: $showModels) {
-            NavigationStack {
-                ModelManagerView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showModels = false }
-                        }
-                    }
-            }
+        .onAppear {
+            Task { _ = await InAppWorkspaceStore.shared.perform(.open(.chats)) }
         }
     }
 

@@ -2,6 +2,16 @@
 
 WebDriverAgent/XCTest is a **developer-device** path. It is not App Store safe and is not part of the consumer Agent Mode runtime. PrivateAgent talks to a local adapter, not directly to XCTest, so the iOS planning layer stays the same as Mac-assisted mode.
 
+## Adapter process
+
+`Bridge/wda_adapter.py` implements this protocol and forwards to a running WebDriverAgent:
+
+```bash
+python3 Bridge/wda_adapter.py --token dev --wda-url http://127.0.0.1:8100 --port 8101
+```
+
+Point Agent Mode / `LocalWebDriverAgentClient` at `http://127.0.0.1:8101`. The adapter creates a WDA session if needed, maps `/observation` onto `/source`, and maps tap/type onto element find + click/value.
+
 ## When to use it
 
 - A personal or CI device with WebDriverAgent or an XCTest runner installed.

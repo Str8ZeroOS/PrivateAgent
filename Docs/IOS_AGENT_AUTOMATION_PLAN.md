@@ -87,9 +87,11 @@ Capability fallback order when a primary executor is unavailable:
 - `ActionVerifier` / `GoalVerifier` distinguishing executor success from observation proof.
 - `RecoveryEngine` classification: transient, wrong target, permission, unavailable capability, impossible.
 - Mac bridge protocol and local HTTP client contracts.
-- First-party App Intents catalog (`OpenModelManager`, `OpenSettings`, `StartChat`, `OpenAgentMode`, `OpenURL`) and `AppIntentActionExecutor`.
-- Richer in-app observation of PrivateAgent-owned screens and controls via `InAppWorkspace`.
-- WebDriverAgent/XCTest adapter contract for developer devices only.
+- First-party App Intents catalog plus `AppIntents` definitions (`OpenModelManagerIntent`, `OpenSettingsIntent`, `StartChatIntent`, `OpenAgentModeIntent`) wired through `AppRouter`.
+- Live in-app workspace store (`InAppWorkspaceStore`, `LiveWorkspaceObserver`) that updates after tap/intent navigation.
+- SwiftUI navigation for Agent Mode, Models, Settings, and new chat via `AppRouter`.
+- WebDriverAgent adapter process: `Bridge/wda_adapter.py`.
+- Opt-in Mac AX observation and AX click in `Bridge/mac_bridge_helper.py`.
 - AgentCore is Foundation-only. UIKit stays behind `#if canImport(UIKit)` in `PrivateAgentUI`.
 - Linux host builds: `Package.swift` exposes only `AgentCore` on Linux so `swift build` and `swift test` run without Metal/UIKit.
 - Unit tests for the state machine, loop limits, JSON repair, validator, verifier, and recovery classification.
@@ -109,11 +111,10 @@ When a goal needs those capabilities, the planner must hand off to an allowed ex
 ## Remaining work that needs Xcode / a device
 
 1. Full `swift build` / `swift test` of FlashMoE, Metal, and `PrivateAgentUI` on macOS (Linux only builds AgentCore).
-2. Xcode iOS app compile, signing, and on-device Agent Mode run.
-3. Hook `InAppActionExecutor` / first-party App Intents to real SwiftUI navigation and `AppIntents` definitions in the iOS target.
-4. A paired Mac helper that implements privileged observation/action adapters from `Docs/MAC_BRIDGE_PROTOCOL.md`.
-5. A developer-device WDA adapter process that implements `Docs/WEBDRIVERAGENT_PROTOCOL.md` on top of WebDriverAgent/XCTest.
-6. Live SwiftUI accessibility snapshots for in-app controls instead of the static workspace catalog.
+2. Xcode iOS app compile, signing, and on-device Agent Mode plus Siri/Shortcuts phrase checks for the new App Intents.
+3. Run the Mac helper with `--enable-ax-observation` and `--enable-accessibility-actions` on a paired Mac that has Accessibility permission.
+4. Run `Bridge/wda_adapter.py` against a real WebDriverAgent session on a developer device.
+5. Replace catalog/AX name lists with live SwiftUI accessibility snapshots and a true iPhone-mirroring observation adapter.
 
 ## Safety rules
 
