@@ -163,8 +163,10 @@ TestFlight upload:
 
 1. Confirm every required secret is set.
 2. `git tag v1.0.0 && git push origin v1.0.0`
-3. When it succeeds, the IPA is stored as the `PrivateAgent-v1.0.0-ipa` artifact.
+3. When it succeeds, the IPA is stored as the `PrivateAgent-v1.0.0-ipa` artifact. CI runs a local IPA preflight and `xcrun altool --validate-app` before upload.
 4. In App Store Connect, open the app → TestFlight. Processing can take several minutes after the job finishes (`skip_waiting_for_build_processing` is on).
+
+The checked-in App Icon is a placeholder (dark background, **PA** monogram, no transparency). To use your own art, drop an opaque 1024×1024 PNG in and run `python3 Scripts/generate-app-icon.py --from-png your-icon.png`, then commit the files under `Apps/PrivateAgentiOS/Assets.xcassets/AppIcon.appiconset/`.
 
 The Sierra MacBook is not used for this path. Do not install Xcode 6-era tools or iPhone Mirroring on it.
 
