@@ -11,4 +11,4 @@ This keeps build verification independent from any single local workstation. In 
 
 Last CI trigger note: this file may be touched with a no-op documentation update when a fresh workflow run is needed after API-based changes.
 
-Current trigger purpose: verify Agent Mode bridge settings and health-check wiring.
+Current trigger purpose: iOS simulator compile via ios-testflight.yml plus AgentCore Linux tests.
