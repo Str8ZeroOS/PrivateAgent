@@ -36,6 +36,11 @@ public final class AppRouter {
             _ = await InAppWorkspaceStore.shared.perform(.open(screen))
         }
     }
+
+    public func open(url: URL) {
+        guard let screen = InAppDeepLink.screen(from: url) else { return }
+        open(screen)
+    }
 }
 
 public struct AppRouterNavigator: InAppNavigating {

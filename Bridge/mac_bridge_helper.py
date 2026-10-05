@@ -53,6 +53,10 @@ SCROLL_KEY_CODES = {
     "right": 124,
 }
 
+IPHONE_MIRRORING_MARKERS = (
+    "iphone mirroring",
+)
+
 
 def iso_now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -92,6 +96,20 @@ def frontmost_app():
     if ok and out:
         return out
     return "unknown (%s)" % err if err else "unknown"
+
+
+def is_iphone_mirroring_app(name):
+    lowered = (name or "").lower()
+    for marker in IPHONE_MIRRORING_MARKERS:
+        if marker in lowered:
+            return True
+    return False
+
+
+def observation_source(app_name, mirroring_enabled):
+    if mirroring_enabled and is_iphone_mirroring_app(app_name):
+        return "iphoneMirroring"
+    return "macBridge"
 
 
 def ax_element_names():
@@ -268,11 +286,13 @@ class BridgeState(object):
         enable_accessibility_actions=False,
         enable_clipboard_observation=False,
         enable_ax_observation=False,
+        enable_iphone_mirroring=False,
     ):
         self.token = token
         self.enable_accessibility_actions = enable_accessibility_actions
         self.enable_clipboard_observation = enable_clipboard_observation
         self.enable_ax_observation = enable_ax_observation
+        self.enable_iphone_mirroring = enable_iphone_mirroring
         self.started_at = iso_now()
         self.events = []
 
@@ -293,6 +313,8 @@ class BridgeState(object):
             result.append("axTreeObservation")
         if self.enable_accessibility_actions:
             result.append("axClick")
+        if self.enable_iphone_mirroring:
+            result.append("iphoneMirroringObservation")
         return result
 
     def mode(self):
@@ -303,6 +325,8 @@ class BridgeState(object):
             flags.append("clipboard")
         if self.enable_ax_observation:
             flags.append("ax")
+        if self.enable_iphone_mirroring:
+            flags.append("mirroring")
         if not flags:
             return "guarded-actions"
         return "guarded-actions+" + "+".join(flags)
@@ -387,10 +411,21 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/observation":
             self.state.record({"type": "observation", "body": body})
             goal = body.get("goal", "")
+            app_name = frontmost_app()
+            source = observation_source(app_name, self.state.enable_iphone_mirroring)
             visible_text = [
                 "Mac bridge connected",
-                "Frontmost app: %s" % frontmost_app(),
+                "Frontmost app: %s" % app_name,
             ]
+            if source == "iphoneMirroring":
+                visible_text.append("iPhone Mirroring window is frontmost")
+                visible_text.append(
+                    "This is Mac-side AX of the mirrored window, not an iOS AccessibilityService."
+                )
+                if not self.state.enable_ax_observation:
+                    visible_text.append(
+                        "Enable --enable-ax-observation to scrape mirrored window AX names."
+                    )
             clip = clipboard_summary(self.state.enable_clipboard_observation)
             if clip:
                 visible_text.append(clip)
@@ -400,17 +435,20 @@ class Handler(BaseHTTPRequestHandler):
                 visible_text.extend([control["label"] for control in controls[:12]])
                 if ax_err and not controls:
                     visible_text.append(ax_err)
+            app_context = "Mac bridge helper on %s" % platform.node()
+            if source == "iphoneMirroring":
+                app_context = "iPhone Mirroring on %s" % platform.node()
             self._send_json(
                 200,
                 {
                     "status": "completed",
                     "message": "Captured Mac bridge context.",
                     "observation": {
-                        "source": "macBridge",
+                        "source": source,
                         "userGoal": goal,
                         "visibleText": visible_text,
                         "controls": controls,
-                        "appContext": "Mac bridge helper on %s" % platform.node(),
+                        "appContext": app_context,
                         "timestamp": iso_now(),
                     },
                 },
@@ -434,6 +472,7 @@ def main():
     parser.add_argument("--enable-accessibility-actions", action="store_true")
     parser.add_argument("--enable-clipboard-observation", action="store_true")
     parser.add_argument("--enable-ax-observation", action="store_true")
+    parser.add_argument("--enable-iphone-mirroring", action="store_true")
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
@@ -442,6 +481,7 @@ def main():
         enable_accessibility_actions=args.enable_accessibility_actions,
         enable_clipboard_observation=args.enable_clipboard_observation,
         enable_ax_observation=args.enable_ax_observation,
+        enable_iphone_mirroring=args.enable_iphone_mirroring,
     )
 
     print("PrivateAgent Mac Bridge listening on http://%s:%s" % (args.host, args.port))

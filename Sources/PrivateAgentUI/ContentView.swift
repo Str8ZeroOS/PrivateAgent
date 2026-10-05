@@ -61,6 +61,9 @@ public struct ContentView: View {
         .environment(engine)
         .environment(router)
         .modelContainer(for: [Conversation.self, Message.self, AgentRunRecord.self])
+        .onOpenURL { url in
+            router.open(url: url)
+        }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background && engine.state == .generating {
                 print("[APP] entering background while generating — cancelling to avoid GPU error")

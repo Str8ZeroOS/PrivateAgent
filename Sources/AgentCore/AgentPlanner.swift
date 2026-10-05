@@ -25,27 +25,20 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
             )
         }
 
+        if isExternalObservationSource(observation.source) {
+            return externalHandoffPlan(allowedModes: allowedModes)
+        }
+
+        if let deepLinkPlan = deepLinkPlan(for: observation) {
+            return deepLinkPlan
+        }
+
         if let workspacePlan = inAppWorkspacePlan(for: observation, allowedModes: allowedModes) {
             return workspacePlan
         }
 
         if requiresExternalAutomation(observation: observation) {
-            let target = bestExternalMode(from: allowedModes)
-            return AgentPlan(
-                summary: "Prepare an external automation handoff.",
-                steps: [
-                    AgentStep(
-                        action: .handoff(AgentHandoff(target: target, reason: "This task appears to require reading or controlling another app.")),
-                        rationale: "Normal iOS apps cannot inspect and control arbitrary third-party apps like Android Accessibility Services.",
-                        target: target.rawValue,
-                        risk: target == .jailbreak ? .high : .medium,
-                        requiresApproval: true,
-                        expectedResult: "External automation mode accepted the handoff"
-                    )
-                ],
-                requiresUserApproval: true,
-                risk: target == .jailbreak ? .high : .medium
-            )
+            return externalHandoffPlan(allowedModes: allowedModes)
         }
 
         return AgentPlan(
@@ -63,21 +56,43 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         )
     }
 
-    private func requiresExternalAutomation(observation: AgentObservation) -> Bool {
-        switch observation.source {
-        case .macBridge, .webDriverAgent, .jailbreakBridge:
+    private func isExternalObservationSource(_ source: ObservationSource) -> Bool {
+        switch source {
+        case .macBridge, .iphoneMirroring, .webDriverAgent, .jailbreakBridge:
             return true
         case .privateAgentApp, .appIntent, .shortcuts, .userProvided:
-            break
+            return false
         }
+    }
 
+    private func externalHandoffPlan(allowedModes: [AutomationMode]) -> AgentPlan {
+        let target = bestExternalMode(from: allowedModes)
+        return AgentPlan(
+            summary: "Prepare an external automation handoff.",
+            steps: [
+                AgentStep(
+                    action: .handoff(AgentHandoff(target: target, reason: "This task appears to require reading or controlling another app.")),
+                    rationale: "Normal iOS apps cannot inspect and control arbitrary third-party apps like Android Accessibility Services.",
+                    target: target.rawValue,
+                    risk: target == .jailbreak ? .high : .medium,
+                    requiresApproval: true,
+                    expectedResult: "External automation mode accepted the handoff"
+                )
+            ],
+            requiresUserApproval: true,
+            risk: target == .jailbreak ? .high : .medium
+        )
+    }
+
+    private func requiresExternalAutomation(observation: AgentObservation) -> Bool {
         let goal = observation.userGoal.lowercased()
         if matchingWorkspaceControl(in: observation) != nil {
             return false
         }
         let externalSignals = [
             "swipe", "scroll", "open app", "instagram", "youtube", "telegram", "chrome", "safari",
-            "control my phone", "use my phone", "iphone settings", "ios settings", "system settings", "settings app"
+            "control my phone", "use my phone", "iphone settings", "ios settings", "system settings",
+            "settings app", "iphone mirroring"
         ]
         if externalSignals.contains(where: { goal.contains($0) }) {
             return true
@@ -86,6 +101,25 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
             return true
         }
         return false
+    }
+
+    private func deepLinkPlan(for observation: AgentObservation) -> AgentPlan? {
+        guard let screen = InAppDeepLink.screen(inGoal: observation.userGoal) else {
+            return nil
+        }
+        let url = InAppDeepLink.url(for: screen).absoluteString
+        return AgentPlan(
+            summary: "Open PrivateAgent \(screen.rawValue).",
+            steps: [
+                AgentStep(
+                    action: .openURL(url),
+                    rationale: "The goal is a first-party PrivateAgent deep link.",
+                    target: url,
+                    expectedResult: screen.rawValue,
+                    verification: .appContextContains(screen.rawValue)
+                )
+            ]
+        )
     }
 
     private func inAppWorkspacePlan(for observation: AgentObservation, allowedModes: [AutomationMode]) -> AgentPlan? {

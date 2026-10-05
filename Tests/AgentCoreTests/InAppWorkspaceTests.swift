@@ -123,4 +123,63 @@ struct InAppWorkspaceTests {
         #expect(snapshot.phase == .completed)
         #expect(await store.currentScreen() == .models)
     }
+
+    @Test("deep links resolve first-party screens and aliases")
+    func deepLinksResolveScreens() {
+        #expect(InAppDeepLink.screen(from: "privateagent://models") == .models)
+        #expect(InAppDeepLink.screen(from: "privateagent://agent") == .agentMode)
+        #expect(InAppDeepLink.screen(inGoal: "Please open privateagent://settings now") == .settings)
+        #expect(InAppDeepLink.intentName(for: .models) == "OpenModelManager")
+        #expect(InAppDeepLink.controlId(for: .settings) == "nav.settings")
+    }
+
+    @Test("live accessibility snapshot merges over the catalog")
+    func liveSnapshotMergesOverCatalog() async {
+        let store = InAppWorkspaceStore(screen: .agentMode)
+        await store.publish(
+            AccessibilitySnapshot(
+                screen: .models,
+                visibleText: ["Live Model Manager", "Qwen"],
+                controls: [AgentControl(id: "models.download", label: "Download Qwen", role: .button)],
+                traits: ["selectedModel": "qwen"]
+            )
+        )
+
+        let observation = await store.snapshot(goal: "Download Qwen")
+        #expect(observation.appContext == "PrivateAgent.models")
+        #expect(observation.visibleText.contains("Live Model Manager"))
+        #expect(observation.visibleText.contains("selectedModel=qwen"))
+        #expect(observation.controls.contains(where: { $0.id == "models.download" && $0.label == "Download Qwen" }))
+        #expect(observation.controls.contains(where: { $0.id == "nav.chats" }))
+    }
+
+    @Test("in-app executor opens a privateagent deep link")
+    func opensPrivateAgentDeepLink() async throws {
+        let store = InAppWorkspaceStore(screen: .agentMode)
+        let executor = InAppActionExecutor(navigator: store)
+        #expect(executor.canExecute(.openURL("privateagent://models")))
+        #expect(!executor.canExecute(.openURL("https://example.com")))
+
+        let result = try await executor.execute(.openURL("privateagent://models"))
+        #expect(result.status == .completed)
+        #expect(result.message.contains("privateagent://models"))
+        #expect(await store.currentScreen() == .models)
+    }
+
+    @Test("closed loop can follow a first-party deep link")
+    func loopFollowsDeepLink() async {
+        let store = InAppWorkspaceStore(screen: .agentMode)
+        let loop = AgentLoop(
+            configuration: AgentLoopConfiguration(
+                observer: LiveWorkspaceObserver(store: store),
+                planner: RuleBasedAgentPlanner(),
+                executor: InAppActionExecutor(navigator: store),
+                approval: AutoApprovingHandler(),
+                allowedModes: [.inApp, .appIntents]
+            )
+        )
+        let snapshot = await loop.run(goal: "Open privateagent://settings")
+        #expect(snapshot.phase == .completed)
+        #expect(await store.currentScreen() == .settings)
+    }
 }

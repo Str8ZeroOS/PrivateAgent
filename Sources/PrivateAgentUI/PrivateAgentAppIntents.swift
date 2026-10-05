@@ -2,6 +2,9 @@ import AgentCore
 
 #if canImport(AppIntents)
 import AppIntents
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public struct OpenModelManagerIntent: AppIntent {
     public static var title: LocalizedStringResource = "Open Model Manager"
@@ -51,6 +54,36 @@ public struct OpenAgentModeIntent: AppIntent {
     }
 }
 
+public struct OpenURLIntent: AppIntent {
+    public static var title: LocalizedStringResource = "Open URL"
+    public static var description = IntentDescription("Open a URL through PrivateAgent, including first-party privateagent:// deep links.")
+
+    @Parameter(title: "URL")
+    public var url: URL
+
+    public init() {
+        self.url = InAppDeepLink.url(for: .agentMode)
+    }
+
+    public init(url: URL) {
+        self.url = url
+    }
+
+    public func perform() async throws -> some IntentResult {
+        if let screen = InAppDeepLink.screen(from: url) {
+            await AppRouter.shared.open(screen)
+            return .result()
+        }
+
+        #if canImport(UIKit)
+        await MainActor.run {
+            UIApplication.shared.open(url)
+        }
+        #endif
+        return .result()
+    }
+}
+
 public struct PrivateAgentShortcuts: AppShortcutsProvider {
     public static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -76,6 +109,12 @@ public struct PrivateAgentShortcuts: AppShortcutsProvider {
             phrases: ["Open Agent Mode in \(.applicationName)"],
             shortTitle: "Agent Mode",
             systemImageName: "sparkles"
+        )
+        AppShortcut(
+            intent: OpenURLIntent(),
+            phrases: ["Open a URL in \(.applicationName)"],
+            shortTitle: "Open URL",
+            systemImageName: "link"
         )
     }
 }

@@ -31,19 +31,34 @@ public actor InAppWorkspaceStore: InAppNavigating {
     private var screen: InAppScreen
     private var fieldValues: [String: String]
     private var extraVisibleText: [String]
+    private var liveSnapshot: AccessibilitySnapshot?
 
     public init(screen: InAppScreen = .agentMode) {
         self.screen = screen
         self.fieldValues = [:]
         self.extraVisibleText = []
+        self.liveSnapshot = nil
     }
 
     public func currentScreen() -> InAppScreen {
         screen
     }
 
+    public func publish(_ snapshot: AccessibilitySnapshot) {
+        screen = snapshot.screen
+        liveSnapshot = snapshot
+    }
+
+    public func latestLiveSnapshot() -> AccessibilitySnapshot? {
+        liveSnapshot
+    }
+
     public func snapshot(goal: String) -> AgentObservation {
-        var text = InAppWorkspace.visibleText(on: screen)
+        let live = liveSnapshot.flatMap { $0.screen == screen ? $0 : nil }
+        var text = AccessibilitySnapshotMerge.visibleText(
+            catalog: InAppWorkspace.visibleText(on: screen),
+            live: live
+        )
         text.append(contentsOf: extraVisibleText)
         for key in fieldValues.keys.sorted() {
             if let value = fieldValues[key], !value.isEmpty {
@@ -54,7 +69,10 @@ public actor InAppWorkspaceStore: InAppNavigating {
             source: .privateAgentApp,
             userGoal: goal,
             visibleText: text,
-            controls: InAppWorkspace.controls(on: screen),
+            controls: AccessibilitySnapshotMerge.controls(
+                catalog: InAppWorkspace.controls(on: screen),
+                live: live?.controls ?? []
+            ),
             appContext: InAppWorkspace.appContext(for: screen)
         )
     }

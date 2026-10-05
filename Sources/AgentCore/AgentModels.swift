@@ -30,6 +30,7 @@ public enum ObservationSource: String, Sendable, Codable, Equatable {
     case appIntent
     case shortcuts
     case macBridge
+    case iphoneMirroring
     case webDriverAgent
     case jailbreakBridge
     case userProvided

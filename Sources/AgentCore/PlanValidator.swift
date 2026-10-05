@@ -79,7 +79,9 @@ public struct PlanValidator: PlanValidating {
                 if !isPlausibleURL(raw) {
                     issues.append(PlanValidationIssue(severity: .error, message: "Invalid URL: \(raw)"))
                 }
-                requiresApproval = true
+                if InAppDeepLink.screen(from: raw) == nil {
+                    requiresApproval = true
+                }
             case .tap(let controlId):
                 if !observation.controls.isEmpty && !observation.controls.contains(where: { $0.id == controlId }) {
                     issues.append(PlanValidationIssue(severity: .warning, message: "Tap target \(controlId) is not in the current observation."))
@@ -152,6 +154,6 @@ public struct PlanValidator: PlanValidating {
     private func isPlausibleURL(_ raw: String) -> Bool {
         guard let url = URL(string: raw), url.scheme != nil else { return false }
         let scheme = url.scheme?.lowercased() ?? ""
-        return ["http", "https", "shortcuts", "mailto", "tel", "sms"].contains(scheme)
+        return ["http", "https", "shortcuts", "mailto", "tel", "sms", "privateagent"].contains(scheme)
     }
 }

@@ -101,8 +101,9 @@ Privileged adapters stay off unless the helper is launched with explicit flags:
 - `--enable-accessibility-actions`: type, arrow-key scroll, key codes, and AX click by control id/label
 - `--enable-ax-observation`: include frontmost-app System Events UI element names as observation controls
 - `--enable-clipboard-observation`: include a short clipboard summary
+- `--enable-iphone-mirroring`: if the frontmost Mac app is iPhone Mirroring, set `observation.source` to `iphoneMirroring` and label the app context as the mirrored window. Pair with `--enable-ax-observation` to include that window's AX names.
 
-Without those flags the helper still does not read the clipboard, inject keystrokes, scrape screen contents, or click UI elements. It never controls the iPhone UI directly.
+Without those flags the helper still does not read the clipboard, inject keystrokes, scrape screen contents, or click UI elements. It never controls the iPhone UI directly. iPhone Mirroring observation is Mac-side AX of the mirrored window, not an iOS AccessibilityService.
 
 ## Required Bridge Behavior
 
@@ -117,7 +118,7 @@ Without those flags the helper still does not read the clipboard, inject keystro
 
 To get closer to Android-style automation, add adapters in this order:
 
-1. **iPhone Mirroring or screen observation adapter**: capture visible state and produce stable controls.
+1. **iPhone Mirroring adapter (opt-in)**: `--enable-iphone-mirroring` classifies the frontmost iPhone Mirroring window. Combine with `--enable-ax-observation` for AX names from that window. This is still Mac-side observation, not a true iOS accessibility dump.
 2. **XCTest/WebDriverAgent adapter**: operate on developer devices where test automation is allowed.
 3. **Accessibility adapter**: perform tap/type/scroll only after explicit user approval and macOS permission setup.
 4. **OCR/vision fallback**: identify visible text when structured accessibility metadata is unavailable.

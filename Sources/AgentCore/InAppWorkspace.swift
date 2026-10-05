@@ -59,6 +59,130 @@ public enum FirstPartyAppIntents {
     }
 }
 
+public enum InAppDeepLink {
+    public static let scheme = "privateagent"
+
+    public static func url(for screen: InAppScreen) -> URL {
+        URL(string: "\(scheme)://\(screen.rawValue)")!
+    }
+
+    public static func screen(from raw: String) -> InAppScreen? {
+        guard let url = URL(string: raw) else { return nil }
+        return screen(from: url)
+    }
+
+    public static func screen(from url: URL) -> InAppScreen? {
+        guard url.scheme?.lowercased() == scheme else { return nil }
+        let host = (url.host ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).lowercased()
+        let aliases = [
+            "agent": InAppScreen.agentMode,
+            "agentmode": .agentMode,
+            "model": .models,
+            "models": .models,
+            "setting": .settings,
+            "settings": .settings,
+            "chat": .chat,
+            "chats": .chats
+        ]
+        return aliases[host] ?? InAppScreen.allCases.first { $0.rawValue.lowercased() == host }
+    }
+
+    public static func screen(inGoal goal: String) -> InAppScreen? {
+        if let screen = screen(from: goal) {
+            return screen
+        }
+        guard let range = goal.range(of: "\(scheme)://", options: .caseInsensitive) else {
+            return nil
+        }
+        let remainder = String(goal[range.lowerBound...])
+        let token = remainder.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).first.map(String.init) ?? remainder
+        return screen(from: token)
+    }
+
+    public static func intentName(for screen: InAppScreen) -> String? {
+        switch screen {
+        case .models:
+            return "OpenModelManager"
+        case .settings:
+            return "OpenSettings"
+        case .chat:
+            return "StartChat"
+        case .agentMode:
+            return "OpenAgentMode"
+        case .chats:
+            return nil
+        }
+    }
+
+    public static func controlId(for screen: InAppScreen) -> String? {
+        switch screen {
+        case .models:
+            return "nav.models"
+        case .settings:
+            return "nav.settings"
+        case .chat:
+            return "nav.newChat"
+        case .agentMode:
+            return "nav.agentMode"
+        case .chats:
+            return "nav.chats"
+        }
+    }
+}
+
+public struct AccessibilitySnapshot: Sendable, Codable, Equatable {
+    public var screen: InAppScreen
+    public var visibleText: [String]
+    public var controls: [AgentControl]
+    public var traits: [String: String]
+    public var capturedAt: Date
+
+    public init(
+        screen: InAppScreen,
+        visibleText: [String] = [],
+        controls: [AgentControl] = [],
+        traits: [String: String] = [:],
+        capturedAt: Date = Date()
+    ) {
+        self.screen = screen
+        self.visibleText = visibleText
+        self.controls = controls
+        self.traits = traits
+        self.capturedAt = capturedAt
+    }
+}
+
+public enum AccessibilitySnapshotMerge {
+    public static func visibleText(catalog: [String], live: AccessibilitySnapshot?) -> [String] {
+        var text = catalog
+        var seen = Set(catalog)
+        guard let live else { return text }
+        for item in live.visibleText where seen.insert(item).inserted {
+            text.append(item)
+        }
+        for (key, value) in live.traits.sorted(by: { $0.key < $1.key }) where !value.isEmpty {
+            let token = "\(key)=\(value)"
+            if seen.insert(token).inserted {
+                text.append(token)
+            }
+        }
+        return text
+    }
+
+    public static func controls(catalog: [AgentControl], live: [AgentControl]) -> [AgentControl] {
+        guard !live.isEmpty else { return catalog }
+        var seen: Set<String> = []
+        var result: [AgentControl] = []
+        for control in live where seen.insert(control.id).inserted {
+            result.append(control)
+        }
+        for control in catalog where seen.insert(control.id).inserted {
+            result.append(control)
+        }
+        return result
+    }
+}
+
 public enum InAppWorkspace {
     public static func appContext(for screen: InAppScreen) -> String {
         "PrivateAgent.\(screen.rawValue)"

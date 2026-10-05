@@ -15,6 +15,14 @@ public enum CapabilityFallback {
             return []
         case .openURL(let url):
             var alternates: [AgentAction] = []
+            if let screen = InAppDeepLink.screen(from: url) {
+                if allowedModes.contains(.appIntents), let intent = InAppDeepLink.intentName(for: screen) {
+                    alternates.append(.invokeAppIntent(intent))
+                }
+                if allowedModes.contains(.inApp), let controlId = InAppDeepLink.controlId(for: screen) {
+                    alternates.append(.tap(controlId: controlId))
+                }
+            }
             if allowedModes.contains(.appIntents) {
                 alternates.append(.invokeAppIntent("OpenURL"))
             }

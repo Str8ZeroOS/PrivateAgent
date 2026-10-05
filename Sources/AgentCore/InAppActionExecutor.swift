@@ -19,7 +19,9 @@ public struct InAppActionExecutor: AgentActionExecuting {
             return InAppWorkspace.control(id: controlId) != nil
         case .invokeAppIntent(let name):
             return FirstPartyAppIntents.resolve(name) != nil
-        case .openURL, .runShortcut, .scroll, .handoff:
+        case .openURL(let raw):
+            return InAppDeepLink.screen(from: raw) != nil
+        case .runShortcut, .scroll, .handoff:
             return false
         }
     }
@@ -57,7 +59,17 @@ public struct InAppActionExecutor: AgentActionExecuting {
                 status: result.succeeded ? .completed : .skipped,
                 message: result.message
             )
-        case .openURL, .runShortcut, .scroll, .handoff:
+        case .openURL(let raw):
+            guard let screen = InAppDeepLink.screen(from: raw) else {
+                return ActionExecutionResult(action: action, status: .skipped, message: "In-app executor does not handle this action.")
+            }
+            let result = await navigator.perform(.open(screen))
+            return ActionExecutionResult(
+                action: action,
+                status: result.succeeded ? .completed : .failed,
+                message: "Opened PrivateAgent deep link \(raw). \(result.message)"
+            )
+        case .runShortcut, .scroll, .handoff:
             return ActionExecutionResult(action: action, status: .skipped, message: "In-app executor does not handle this action.")
         }
     }

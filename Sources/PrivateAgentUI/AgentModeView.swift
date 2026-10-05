@@ -58,6 +58,7 @@ public struct AgentModeView: View {
             Section("Live State") {
                 LabeledContent("Phase", value: viewModel.phase.title)
                 LabeledContent("Workspace", value: viewModel.lastObservation?.appContext ?? "PrivateAgent.agentMode")
+                LabeledContent("Source", value: viewModel.lastObservation?.source.rawValue ?? ObservationSource.privateAgentApp.rawValue)
                 LabeledContent("Loop step", value: "\(viewModel.loopSnapshot?.agentStepCount ?? 0) / \(AgentLoopLimits.default.maxAgentSteps)")
                 if viewModel.isRunning {
                     ProgressView()
@@ -66,6 +67,29 @@ public struct AgentModeView: View {
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+            }
+
+            if let observation = viewModel.lastObservation, !observation.controls.isEmpty {
+                Section("Observed Controls") {
+                    ForEach(observation.controls) { control in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(control.label)
+                            Text("\(control.id) · \(control.role.rawValue)\(control.isEnabled ? "" : " · disabled")")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if let observation = viewModel.lastObservation, !observation.visibleText.isEmpty {
+                Section("Visible Text") {
+                    ForEach(Array(observation.visibleText.prefix(12).enumerated()), id: \.offset) { _, text in
+                        Text(text)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -169,9 +193,16 @@ public struct AgentModeView: View {
             }
         }
         .navigationTitle("Agent Mode")
-        .onAppear {
-            Task { _ = await InAppWorkspaceStore.shared.perform(.open(.agentMode)) }
-        }
+        .workspaceSnapshot(
+            .agentMode,
+            extraVisibleText: viewModel.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? []
+                : [viewModel.goal],
+            traits: [
+                "phase": viewModel.phase.title,
+                "planner": viewModel.planningMode.rawValue
+            ]
+        )
         .toolbar {
             ToolbarItem {
                 NavigationLink("History") {

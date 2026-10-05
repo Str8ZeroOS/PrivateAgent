@@ -51,7 +51,9 @@ Hard limits, with no unbounded loops:
 | Verification | `ACTION_SUCCESS` vs `ACTION_VERIFIED` | `ActionVerifier`, `GoalVerifier` |
 | Recovery | Transient retry, wrong-target re-observe, permission guidance, capability fallback, or stop | `RecoveryEngine`, `CapabilityFallback` |
 | Mac bridge | Cross-app observation/action handoff | `MacBridgeClient`, `LocalBridgeClient`, `MacBridgeActionExecutor` |
-| In-app workspace | First-party screens, controls, and App Intents | `InAppWorkspace`, `InAppActionExecutor`, `AppIntentActionExecutor` |
+| In-app workspace | First-party screens, controls, App Intents, and `privateagent://` deep links | `InAppWorkspace`, `InAppDeepLink`, `InAppActionExecutor`, `AppIntentActionExecutor` |
+| Live snapshots | SwiftUI screens publish `AccessibilitySnapshot` into the workspace store | `InAppWorkspaceStore.publish`, `WorkspaceSnapshotPublisher` |
+| iPhone Mirroring | Mac-side classification of the mirrored iPhone window | `ObservationSource.iphoneMirroring`, `IPhoneMirroring`, `--enable-iphone-mirroring` |
 | WebDriverAgent | Developer-device UI automation contract | `WebDriverAgentClient`, `LocalWebDriverAgentClient`, `Docs/WEBDRIVERAGENT_PROTOCOL.md` |
 
 Plan steps now carry `id`, `action`, `target`, `risk`, `requiresApproval`, `expectedResult`, and a `verification` spec (`none`, `url_contains`, `visible_text_contains`, `control_exists`, `app_context_contains`, `state_predicate`).
@@ -87,9 +89,13 @@ Capability fallback order when a primary executor is unavailable:
 - `ActionVerifier` / `GoalVerifier` distinguishing executor success from observation proof.
 - `RecoveryEngine` classification: transient, wrong target, permission, unavailable capability, impossible.
 - Mac bridge protocol and local HTTP client contracts.
-- First-party App Intents catalog plus `AppIntents` definitions (`OpenModelManagerIntent`, `OpenSettingsIntent`, `StartChatIntent`, `OpenAgentModeIntent`) wired through `AppRouter`.
-- Live in-app workspace store (`InAppWorkspaceStore`, `LiveWorkspaceObserver`) that updates after tap/intent navigation.
+- First-party App Intents catalog plus `AppIntents` definitions (`OpenModelManagerIntent`, `OpenSettingsIntent`, `StartChatIntent`, `OpenAgentModeIntent`, `OpenURLIntent`) wired through `AppRouter`.
+- First-party `privateagent://` deep links (`models`, `settings`, `chat`, `chats`, `agent`) handled by the in-app executor, `ContentView.onOpenURL`, and `OpenURLIntent`.
+- Live in-app workspace store (`InAppWorkspaceStore`, `LiveWorkspaceObserver`) that updates after tap/intent/deep-link navigation.
+- SwiftUI screens publish a live `AccessibilitySnapshot` (visible text, controls, traits) that merges over the static catalog.
+- Agent Mode shows observed controls, visible text, and observation source from the latest loop observation.
 - SwiftUI navigation for Agent Mode, Models, Settings, and new chat via `AppRouter`.
+- iPhone Mirroring is an opt-in Mac observation source. The helper labels the frontmost iPhone Mirroring window as `iphoneMirroring`; the planner treats that as external control, not in-app UI.
 - WebDriverAgent adapter process: `Bridge/wda_adapter.py`.
 - Opt-in Mac AX observation and AX click in `Bridge/mac_bridge_helper.py`.
 - AgentCore is Foundation-only. UIKit stays behind `#if canImport(UIKit)` in `PrivateAgentUI`.
@@ -114,7 +120,8 @@ When a goal needs those capabilities, the planner must hand off to an allowed ex
 2. Xcode iOS app compile, signing, and on-device Agent Mode plus Siri/Shortcuts phrase checks for the new App Intents.
 3. Run the Mac helper with `--enable-ax-observation` and `--enable-accessibility-actions` on a paired Mac that has Accessibility permission.
 4. Run `Bridge/wda_adapter.py` against a real WebDriverAgent session on a developer device.
-5. Replace catalog/AX name lists with live SwiftUI accessibility snapshots and a true iPhone-mirroring observation adapter.
+5. Verify live SwiftUI snapshots and `privateagent://` deep links on a signed iOS device, including Siri phrases for `OpenURLIntent`.
+6. Run the Mac helper with `--enable-iphone-mirroring` (and optionally `--enable-ax-observation`) while iPhone Mirroring is frontmost to capture the mirrored-window AX names.
 
 ## Safety rules
 

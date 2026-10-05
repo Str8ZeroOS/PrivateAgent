@@ -1,4 +1,5 @@
 import SwiftUI
+import AgentCore
 import ModelHub
 
 struct ModelManagerView: View {
@@ -40,6 +41,14 @@ struct ModelManagerView: View {
             }
         }
         .navigationTitle("Models")
+        .workspaceSnapshot(
+            .models,
+            extraVisibleText: selectedModelId.isEmpty ? [] : [selectedModelId],
+            traits: [
+                "selectedModel": selectedModelId,
+                "downloadedCount": "\(downloadedModelIds.count)"
+            ]
+        )
         .task {
             catalogEntries = await ModelCatalog.shared.entries
             await refreshState()

@@ -103,4 +103,21 @@ struct PlanValidatorTests {
             return
         }
     }
+
+    @Test("first-party privateagent URLs are valid without extra approval")
+    func acceptsPrivateAgentDeepLink() {
+        let observation = InAppWorkspace.observation(goal: "Open models")
+        let plan = AgentPlan(
+            summary: "Open models",
+            steps: [AgentStep(action: .openURL("privateagent://models"), rationale: "First-party deep link")]
+        )
+        let result = PlanValidator().validate(
+            plan,
+            observation: observation,
+            allowedModes: [.inApp],
+            executor: InAppActionExecutor()
+        )
+        #expect(result.isValid)
+        #expect(!result.requiresApproval)
+    }
 }

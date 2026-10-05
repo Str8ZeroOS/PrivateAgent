@@ -91,9 +91,11 @@ struct ConversationListView: View {
             router.startChatRequested = false
             newConversation()
         }
-        .onAppear {
-            Task { _ = await InAppWorkspaceStore.shared.perform(.open(.chats)) }
-        }
+        .workspaceSnapshot(
+            .chats,
+            extraVisibleText: searchText.isEmpty ? [] : [searchText],
+            traits: searchText.isEmpty ? [:] : ["search": searchText]
+        )
     }
 
     private func newConversation() {

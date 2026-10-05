@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AgentCore
 import FlashMoEBridge
 
 struct ChatView: View {
@@ -19,6 +20,7 @@ struct ChatView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .workspaceSnapshot(.chat)
         .onAppear {
             if viewModel == nil {
                 viewModel = ChatViewModel(
