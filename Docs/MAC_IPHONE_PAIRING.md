@@ -32,7 +32,7 @@ Keep that session open. The helper stays in the foreground. Then open the printe
 ## From a machine that *can* reach the LAN
 
 ```bash
-ssh -p 2222 USER@192.168.12.110
+ssh -p 2222 jay@192.168.12.110
 cd ~/PrivateAgent   # or the real clone path
 ./Scripts/start-mac-bridge.sh
 ```
@@ -67,4 +67,10 @@ If `observation.source` is `iphoneMirroring`, the mirrored window is frontmost.
 
 ## Username
 
-`ssh -p2222 @192.168.12.110` is missing the account name. The scripts take it as the first argument or `PRIVATEAGENT_SSH_USER`.
+The Mac account is `jay`. From a LAN machine:
+
+```bash
+ssh -p 2222 jay@192.168.12.110
+```
+
+This Cloud Agent still cannot open that private hop.

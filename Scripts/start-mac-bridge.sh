@@ -8,7 +8,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This Cloud Agent is a Linux VM and cannot see USB or iPhone Mirroring."
   echo
   echo "On a machine that can reach the MacBook LAN:"
-  echo "  ssh -p 2222 USER@192.168.12.110"
+  echo "  ssh -p 2222 jay@192.168.12.110"
   echo "  ./Scripts/start-mac-bridge.sh"
   echo "  Then open the printed privateagent://pair link on the iPhone"
   echo

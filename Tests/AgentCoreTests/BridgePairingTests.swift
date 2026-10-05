@@ -7,6 +7,7 @@ struct BridgePairingTests {
     @Test("LAN defaults match the MacBook SSH hop")
     func lanDefaultsMatchSSHHop() {
         #expect(PrivateAgentLAN.macHost == "192.168.12.110")
+        #expect(PrivateAgentLAN.sshUser == "jay")
         #expect(PrivateAgentLAN.sshPort == 2222)
         #expect(PrivateAgentLAN.bridgePort == 8765)
     }
@@ -58,6 +59,7 @@ struct BridgePairingTests {
         #expect(!diagnosis.canDriveIPhoneFromThisProcess)
         #expect(diagnosis.nextAction.contains("192.168.12.110"))
         #expect(diagnosis.nextAction.contains("2222"))
+        #expect(diagnosis.nextAction.contains("jay@"))
         #expect(diagnosis.nextAction.contains("start-mac-bridge.sh"))
     }
 

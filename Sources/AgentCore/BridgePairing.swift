@@ -2,6 +2,7 @@ import Foundation
 
 public enum PrivateAgentLAN {
     public static let macHost = "192.168.12.110"
+    public static let sshUser = "jay"
     public static let sshPort = 2222
     public static let bridgePort = 8765
 }
@@ -194,7 +195,7 @@ public enum BridgePairingDoctor {
                 onDarwin: onDarwin,
                 selfHostedWorkerAvailable: false,
                 recommendedModes: modes,
-                nextAction: "This Cloud Agent cannot reach \(PrivateAgentLAN.macHost):\(PrivateAgentLAN.sshPort). From a machine on that LAN: ssh -p \(PrivateAgentLAN.sshPort) USER@\(PrivateAgentLAN.macHost) then ./Scripts/start-mac-bridge.sh, and open the printed privateagent://pair link on the iPhone.",
+                nextAction: "This Cloud Agent cannot reach \(PrivateAgentLAN.macHost):\(PrivateAgentLAN.sshPort). From a machine on that LAN: ssh -p \(PrivateAgentLAN.sshPort) \(PrivateAgentLAN.sshUser)@\(PrivateAgentLAN.macHost) then ./Scripts/start-mac-bridge.sh, and open the printed privateagent://pair link on the iPhone.",
                 canDriveIPhoneFromThisProcess: false
             )
         }
