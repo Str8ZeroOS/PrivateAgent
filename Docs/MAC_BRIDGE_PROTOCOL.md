@@ -126,3 +126,5 @@ To get closer to Android-style automation, add adapters in this order:
 Each adapter should plug into the same `/observation` and `/action` protocol instead of changing the iOS planning layer.
 
 Agent Mode now composes these adapters at runtime: when Mac-assisted or WebDriverAgent is allowed and a host is configured, `CapabilityRuntime` observes and executes through that client instead of leaving the contracts unused.
+
+To pair an already-connected iPhone, run `Scripts/start-mac-bridge.sh` on the MacBook and open the printed `privateagent://pair` link. See `Docs/MAC_IPHONE_PAIRING.md`.

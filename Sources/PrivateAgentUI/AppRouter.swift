@@ -11,6 +11,7 @@ public final class AppRouter {
     public var isModelsPresented = false
     public var isSettingsPresented = false
     public var startChatRequested = false
+    public var lastPairingHost: String?
 
     public init() {}
 
@@ -38,6 +39,12 @@ public final class AppRouter {
     }
 
     public func open(url: URL) {
+        if let pairing = BridgePairing.fromDeepLink(url) {
+            BridgePairingStore.save(pairing)
+            lastPairingHost = pairing.host
+            open(.agentMode)
+            return
+        }
         guard let screen = InAppDeepLink.screen(from: url) else { return }
         open(screen)
     }

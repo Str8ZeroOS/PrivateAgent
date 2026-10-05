@@ -59,6 +59,7 @@ public struct AgentModeView: View {
                 LabeledContent("Phase", value: viewModel.phase.title)
                 LabeledContent("Workspace", value: viewModel.lastObservation?.appContext ?? "PrivateAgent.agentMode")
                 LabeledContent("Source", value: viewModel.lastObservation?.source.rawValue ?? ObservationSource.privateAgentApp.rawValue)
+                LabeledContent("Mac pairing", value: viewModel.bridgeHost.isEmpty ? "Not paired" : "\(viewModel.bridgeHost):\(viewModel.bridgePort)")
                 LabeledContent("Loop step", value: "\(viewModel.loopSnapshot?.agentStepCount ?? 0) / \(AgentLoopLimits.default.maxAgentSteps)")
                 if viewModel.isRunning {
                     ProgressView()
@@ -222,6 +223,9 @@ public struct AgentModeView: View {
                 "planner": viewModel.planningMode.rawValue
             ]
         )
+        .onAppear {
+            viewModel.reloadPairing()
+        }
         .toolbar {
             ToolbarItem {
                 NavigationLink("History") {

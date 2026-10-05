@@ -55,6 +55,35 @@ public final class AgentModeViewModel {
     ) {
         self.session = session
         self.runner = runner
+        reloadPairing()
+    }
+
+    public func reloadPairing() {
+        guard let pairing = BridgePairingStore.load() else { return }
+        apply(pairing)
+    }
+
+    public func apply(_ pairing: BridgePairing) {
+        bridgeHost = pairing.host
+        bridgePort = String(pairing.port)
+        bridgeToken = pairing.token
+        wdaHost = pairing.wdaHost
+        wdaPort = String(pairing.wdaPort)
+        wdaToken = pairing.wdaToken
+        allowedModes = pairing.recommendedModes(startingFrom: allowedModes)
+        saveBridgeSettings()
+        BridgePairingStore.save(pairing)
+        let diagnosis = BridgePairingDoctor.diagnose(
+            pairing: pairing,
+            onDarwin: {
+                #if os(macOS)
+                return true
+                #else
+                return false
+                #endif
+            }()
+        )
+        bridgeStatus = "Paired \(pairing.host):\(pairing.port). \(diagnosis.nextAction)"
     }
 
     public func updateGoal(_ goal: String) {

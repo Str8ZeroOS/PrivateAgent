@@ -99,6 +99,7 @@ Capability fallback order when a primary executor is unavailable:
 - iPhone Mirroring is an opt-in Mac observation source. The helper labels the frontmost iPhone Mirroring window as `iphoneMirroring`. The planner taps live mirrored/Mac/WDA controls instead of looping another handoff.
 - `CapabilityRuntime` wires Agent Mode: if Mac-assisted or WebDriverAgent is allowed and a client is configured, the loop observes and acts through that adapter, then falls back to the in-app store.
 - Agent Mode includes Mac bridge and WebDriverAgent connection fields plus health/status checks.
+- Automatic Mac/iPhone pairing: `Scripts/start-mac-bridge.sh` writes a local token, opens iPhone Mirroring, and prints a `privateagent://pair` deep link that Agent Mode applies.
 - WebDriverAgent adapter process: `Bridge/wda_adapter.py`.
 - Opt-in Mac AX observation and AX click in `Bridge/mac_bridge_helper.py`.
 - AgentCore is Foundation-only. UIKit stays behind `#if canImport(UIKit)` in `PrivateAgentUI`.

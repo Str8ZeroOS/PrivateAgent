@@ -22,6 +22,10 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 
+# Local Mac/iPhone pairing (tokens stay on the machine)
+.privateagent/
+*.bridge.env
+
 # Models (downloaded, not committed)
 Models/
 *.bin

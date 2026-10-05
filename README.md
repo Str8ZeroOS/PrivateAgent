@@ -68,6 +68,16 @@ swift build
 
 Deploy to your iPhone, download a model from the in-app model manager, and start chatting.
 
+## Mac + iPhone Agent Mode
+
+A Cloud Agent Linux VM cannot see a USB-connected iPhone. On the MacBook that is mirroring the phone:
+
+```bash
+./Scripts/start-mac-bridge.sh
+```
+
+Then open the printed `privateagent://pair` link on the iPhone. Details: `Docs/MAC_IPHONE_PAIRING.md`.
+
 ## Roadmap
 
 - [ ] More model support (Qwen3-235B-A22B, DeepSeek-V3)
