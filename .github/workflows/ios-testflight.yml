@@ -230,7 +230,7 @@ jobs:
             -target PrivateAgentApp \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            | awk '/PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER|MARKETING_VERSION|CURRENT_PROJECT_VERSION/ { print }'
+            | awk '/PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER|PRODUCT_NAME|MARKETING_VERSION|CURRENT_PROJECT_VERSION/ { print }'
           echo "::endgroup::"
 
           echo "::group::xcodebuild archive"
