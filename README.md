@@ -70,11 +70,10 @@ Deploy to your iPhone, download a model from the in-app model manager, and start
 
 ## Mac + iPhone Agent Mode
 
-The MacBook helper is `192.168.12.110` with SSH on port `2222`. A Cloud Agent Linux VM cannot open that LAN hop. From a machine that can:
+The MacBook helper is `192.168.12.110` with SSH on port `2222`. If you are already logged into the Mac from Windows, paste this **on the Mac**:
 
 ```bash
-ssh -p 2222 USER@192.168.12.110
-./Scripts/start-mac-bridge.sh
+curl -fsSL https://raw.githubusercontent.com/Str8ZeroOS/PrivateAgent/cursor/ios-closed-loop-agent-2cc6/Scripts/bootstrap-mac-from-ssh.sh | bash
 ```
 
 Then open the printed `privateagent://pair` link on the iPhone. Details: `Docs/MAC_IPHONE_PAIRING.md`.

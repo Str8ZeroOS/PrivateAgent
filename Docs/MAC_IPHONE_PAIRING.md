@@ -10,6 +10,25 @@ A Cursor Cloud Agent is a separate Linux VM. From this VM:
 
 USB / iPhone Mirroring still only exist on that Mac. This VM cannot open the SSH hop from the public internet.
 
+## Already logged in from Windows
+
+A Windows SSH/Remote Desktop session to the Mac does not give the Cloud Agent a tunnel. Paste this **on the Mac** (in that login):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Str8ZeroOS/PrivateAgent/cursor/ios-closed-loop-agent-2cc6/Scripts/bootstrap-mac-from-ssh.sh | bash
+```
+
+Or, if the repo is already on the Mac:
+
+```bash
+cd ~/PrivateAgent
+git fetch origin
+git checkout cursor/ios-closed-loop-agent-2cc6
+./Scripts/bootstrap-mac-from-ssh.sh
+```
+
+Keep that session open. The helper stays in the foreground. Then open the printed `privateagent://pair` link on the iPhone.
+
 ## From a machine that *can* reach the LAN
 
 ```bash
