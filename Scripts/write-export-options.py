@@ -35,6 +35,10 @@ def main() -> None:
     with open(path, "wb") as handle:
         plistlib.dump(options, handle)
     print(f"Wrote {path}")
+    print(
+        f"ExportOptions: method=app-store-connect signingStyle=manual "
+        f"teamID={team_id} provisioningProfiles={{{bundle_id} -> {profile_name}}}"
+    )
 
 
 if __name__ == "__main__":

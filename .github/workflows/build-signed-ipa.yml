@@ -6,7 +6,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - name: Select newest stable Xcode
@@ -88,7 +88,7 @@ jobs:
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/pa.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath "$RUNNER_TEMP/export"
           mkdir -p out
           cp "$RUNNER_TEMP"/export/*.ipa out/PrivateAgent-signed.ipa
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: PrivateAgent-signed-ipa
           path: out/PrivateAgent-signed.ipa

@@ -177,6 +177,8 @@ The Sierra MacBook is not used for this path. Do not install Xcode 6-era tools o
 
 `fastlane match` is not used. The App Store Connect `.p8` is decoded to a temp file and passed to fastlane as `key_filepath` (not as env base64).
 
+Manual signing is applied to the **PrivateAgentApp** target only (XcodeGen Release settings + a CI xcconfig). `xcodebuild archive` does **not** pass `PROVISIONING_PROFILE_SPECIFIER` on the command line — that override would also hit SwiftPM package products (`PrivateAgent_FlashMoEVendor`, `PrivateAgent_TurboQuantMetal`), which cannot use an App Store profile. `ExportOptions.plist` maps `IOS_BUNDLE_ID` (for example `com.jaytrujillo.privateagent`) to the profile name from the `.mobileprovision` (`PrivateAgent AppStore`) with `signingStyle: manual`, `method: app-store-connect`, and `teamID`. There are no app-extension targets; the one profile covers the main bundle id only.
+
 ## If the simulator job fails
 
 Open the run → **Unsigned iOS simulator build** → download `ios-simulator-failure-logs` if present. The first `error:` from `xcodebuild` is the next fix. That job is the cloud compile signal for people without a modern Mac.

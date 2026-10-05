@@ -53,7 +53,7 @@ jobs:
       build_number: ${{ steps.version.outputs.build_number }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
@@ -88,7 +88,7 @@ jobs:
     timeout-minutes: 75
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
@@ -145,7 +145,7 @@ jobs:
 
       - name: Upload simulator logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ios-simulator-failure-logs
           path: ios-simulator-build.log
@@ -163,7 +163,7 @@ jobs:
       RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
     steps:
       - name: Check out release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
           ref: ${{ needs.resolve-version.outputs.tag }}
@@ -224,7 +224,20 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
+          echo "::group::App target signing settings"
+          xcodebuild -showBuildSettings \
+            -project PrivateAgent.xcodeproj \
+            -target PrivateAgentApp \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            | awk '/PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER|MARKETING_VERSION|CURRENT_PROJECT_VERSION/ { print }'
+          echo "::endgroup::"
+
           echo "::group::xcodebuild archive"
+          # Do not pass PROVISIONING_PROFILE_SPECIFIER / CODE_SIGN_* /
+          # DEVELOPMENT_TEAM / PRODUCT_BUNDLE_IDENTIFIER here. Those overrides
+          # apply to every target, including SwiftPM packages that cannot use
+          # an App Store profile. Signing lives on PrivateAgentApp only.
           xcodebuild archive \
             -project PrivateAgent.xcodeproj \
             -scheme PrivateAgentApp \
@@ -232,13 +245,6 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/PrivateAgent.xcarchive" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
-            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            MARKETING_VERSION="$MARKETING_VERSION" \
             | tee ios-archive.log
           echo "::endgroup::"
 
@@ -263,7 +269,7 @@ jobs:
           echo "Exported ${ipa} as out/PrivateAgent-${RELEASE_TAG}.ipa"
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: PrivateAgent-${{ needs.resolve-version.outputs.tag }}-ipa
           path: out/PrivateAgent-${{ needs.resolve-version.outputs.tag }}.ipa
@@ -297,7 +303,7 @@ jobs:
 
       - name: Upload TestFlight logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ios-testflight-failure-logs
           path: |

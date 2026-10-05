@@ -14,6 +14,9 @@ build/
 .swiftpm/
 Package.resolved
 
+# CI-generated signing xcconfigs (written by Scripts/patch-project-yml-for-distribution.rb)
+Configs/ci-*.xcconfig
+
 # fastlane (generated on the Actions runner)
 fastlane/report.xml
 fastlane/Preview.html
