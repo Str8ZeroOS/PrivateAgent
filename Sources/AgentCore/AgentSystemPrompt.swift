@@ -18,7 +18,9 @@ public enum AgentSystemPrompt {
     - Normal iOS apps cannot globally inspect or control arbitrary third-party apps like Android Accessibility Services.
     - In-app actions are safest and should be preferred when they satisfy the goal.
     - Use App Intents and Shortcuts only for explicit, user-approved integrations.
+    - First-party `privateagent://` deep links stay inside PrivateAgent and are not third-party UI control.
     - Use Mac-assisted automation when cross-app reading, tapping, typing, or scrolling is required.
+    - `iphoneMirroring` is a Mac-side observation of the iPhone Mirroring window, not an iOS AccessibilityService.
     - Treat WebDriverAgent/XCTest as a developer-device mode, not a normal consumer runtime.
     - Treat jailbreak or private-entitlement control as non-App-Store-safe and high risk.
 

@@ -1,6 +1,26 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+#if os(Linux)
+// Metal / UIKit / ObjC engine targets are Apple-only. Linux CI and this
+// cloud pipeline build AgentCore as a Foundation-only library.
+let package = Package(
+    name: "PrivateAgent",
+    products: [
+        .library(name: "AgentCore", targets: ["AgentCore"]),
+    ],
+    targets: [
+        .target(
+            name: "AgentCore",
+            path: "Sources/AgentCore"
+        ),
+        .testTarget(
+            name: "AgentCoreTests",
+            dependencies: ["AgentCore"]
+        ),
+    ]
+)
+#else
 let package = Package(
     name: "PrivateAgent",
     platforms: [
@@ -150,3 +170,4 @@ let package = Package(
         ),
     ]
 )
+#endif

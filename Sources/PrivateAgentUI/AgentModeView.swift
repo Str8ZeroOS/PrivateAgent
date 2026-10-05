@@ -31,13 +31,67 @@ public struct AgentModeView: View {
                 TextField("What should PrivateAgent do?", text: $viewModel.goal, axis: .vertical)
                     .lineLimit(3...6)
 
-                Button("Make Plan") {
-                    Task {
-                        await viewModel.makePlan(engine: engine, appContext: "PrivateAgent")
-                        savePlanningRecord()
+                HStack {
+                    Button("Preview Plan") {
+                        Task {
+                            await viewModel.makePlan(engine: engine, appContext: "PrivateAgent")
+                            savePlanningRecord()
+                        }
+                    }
+                    .disabled(isMakePlanDisabled || viewModel.isRunning)
+
+                    Button(viewModel.isRunning ? "Running…" : "Run Agent") {
+                        Task {
+                            await runAgentAndSaveHistory()
+                        }
+                    }
+                    .disabled(isMakePlanDisabled || viewModel.isRunning)
+
+                    if viewModel.isRunning {
+                        Button("Cancel", role: .destructive) {
+                            Task { await viewModel.cancelAgent() }
+                        }
                     }
                 }
-                .disabled(isMakePlanDisabled)
+            }
+
+            Section("Live State") {
+                LabeledContent("Phase", value: viewModel.phase.title)
+                LabeledContent("Workspace", value: viewModel.lastObservation?.appContext ?? "PrivateAgent.agentMode")
+                LabeledContent("Source", value: viewModel.lastObservation?.source.rawValue ?? ObservationSource.privateAgentApp.rawValue)
+                LabeledContent("Mac pairing", value: viewModel.bridgeHost.isEmpty ? "Not paired" : "\(viewModel.bridgeHost):\(viewModel.bridgePort)")
+                LabeledContent("Loop step", value: "\(viewModel.loopSnapshot?.agentStepCount ?? 0) / \(AgentLoopLimits.default.maxAgentSteps)")
+                if viewModel.isRunning {
+                    ProgressView()
+                }
+                if let message = viewModel.loopSnapshot?.outcomeMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let observation = viewModel.lastObservation, !observation.controls.isEmpty {
+                Section("Observed Controls") {
+                    ForEach(observation.controls) { control in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(control.label)
+                            Text("\(control.id) · \(control.role.rawValue)\(control.isEnabled ? "" : " · disabled")")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if let observation = viewModel.lastObservation, !observation.visibleText.isEmpty {
+                Section("Visible Text") {
+                    ForEach(Array(observation.visibleText.prefix(12).enumerated()), id: \.offset) { _, text in
+                        Text(text)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             Section("Mac Bridge") {
@@ -51,6 +105,25 @@ public struct AgentModeView: View {
 
                 if let bridgeStatus = viewModel.bridgeStatus {
                     Text(bridgeStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("WebDriverAgent") {
+                Text("Developer-device only. Not App Store safe.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Host", text: $viewModel.wdaHost)
+                TextField("Port", text: $viewModel.wdaPort)
+                SecureField("Token", text: $viewModel.wdaToken)
+
+                Button("Check WDA") {
+                    Task { await viewModel.checkWDAStatus() }
+                }
+
+                if let wdaStatus = viewModel.wdaStatus {
+                    Text(wdaStatus)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -79,11 +152,13 @@ public struct AgentModeView: View {
                         LabeledContent("JSON Repair", value: "\(diagnostics.repairAttempts) attempt(s)")
                     }
 
-                    Button(plan.requiresUserApproval ? "Approve and Run Plan" : "Run Plan") {
-                        if plan.requiresUserApproval {
-                            isApprovalDialogPresented = true
-                        } else {
-                            Task { await runPlanAndSaveHistory() }
+                    if !viewModel.isRunning {
+                        Button(plan.requiresUserApproval ? "Approve and Run Once" : "Run Plan Once") {
+                            if plan.requiresUserApproval {
+                                isApprovalDialogPresented = true
+                            } else {
+                                Task { await runPlanAndSaveHistory() }
+                            }
                         }
                     }
                 }
@@ -96,6 +171,21 @@ public struct AgentModeView: View {
                             Text(step.rationale)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if step.requiresApproval || step.risk != .low {
+                                Text("Risk \(step.risk.rawValue)\(step.requiresApproval ? " · approval required" : "")")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let record = viewModel.stepRecords.last(where: { $0.step.id == step.id }) {
+                                Text(record.outcome.title)
+                                    .font(.caption)
+                                    .foregroundStyle(record.verification?.verified == true ? .green : .secondary)
+                                if let verification = record.verification {
+                                    Text(verification.message)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -123,6 +213,19 @@ public struct AgentModeView: View {
             }
         }
         .navigationTitle("Agent Mode")
+        .workspaceSnapshot(
+            .agentMode,
+            extraVisibleText: viewModel.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? []
+                : [viewModel.goal],
+            traits: [
+                "phase": viewModel.phase.title,
+                "planner": viewModel.planningMode.rawValue
+            ]
+        )
+        .onAppear {
+            viewModel.reloadPairing()
+        }
         .toolbar {
             ToolbarItem {
                 NavigationLink("History") {
@@ -131,16 +234,34 @@ public struct AgentModeView: View {
             }
         }
         .confirmationDialog(
-            "Run this plan?",
-            isPresented: $isApprovalDialogPresented,
+            viewModel.pendingApproval == nil ? "Run this plan?" : "Approve this agent plan?",
+            isPresented: Binding(
+                get: { isApprovalDialogPresented || viewModel.pendingApproval != nil },
+                set: { newValue in
+                    isApprovalDialogPresented = newValue
+                    if !newValue && viewModel.pendingApproval != nil {
+                        Task { await viewModel.rejectPendingPlan() }
+                    }
+                }
+            ),
             titleVisibility: .visible
         ) {
-            Button("Run Plan", role: .destructive) {
-                Task { await runPlanAndSaveHistory() }
+            Button(viewModel.pendingApproval == nil ? "Run Plan" : "Approve", role: .destructive) {
+                Task {
+                    if viewModel.pendingApproval != nil {
+                        await viewModel.approvePendingPlan()
+                    } else {
+                        await runPlanAndSaveHistory()
+                    }
+                }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                if viewModel.pendingApproval != nil {
+                    Task { await viewModel.rejectPendingPlan() }
+                }
+            }
         } message: {
-            Text("This plan requires approval because it may use external control, sensitive actions, or a higher-risk automation mode.")
+            Text(viewModel.pendingApproval?.reason ?? "This plan requires approval because it may use external control, sensitive actions, or a higher-risk automation mode.")
         }
     }
 
@@ -155,6 +276,12 @@ public struct AgentModeView: View {
         updateExecutionHistory()
     }
 
+    private func runAgentAndSaveHistory() async {
+        await viewModel.runAgent(engine: engine, appContext: "PrivateAgent")
+        savePlanningRecord()
+        updateExecutionHistory()
+    }
+
     private func savePlanningRecord() {
         guard let observation = viewModel.lastObservation else { return }
         let allowedModes = viewModel.allowedModes.map(\.rawValue)
@@ -166,6 +293,7 @@ public struct AgentModeView: View {
             observationJSON: AgentRunRecordCoding.encode(observation) ?? "{}",
             planJSON: viewModel.plan.flatMap { AgentRunRecordCoding.encode($0) },
             diagnosticsJSON: viewModel.plannerDiagnostics.flatMap { AgentRunRecordCoding.encode($0) },
+            loopSnapshotJSON: viewModel.loopSnapshot.flatMap { AgentRunRecordCoding.encode($0) },
             errorMessage: viewModel.errorMessage
         )
 
@@ -177,6 +305,7 @@ public struct AgentModeView: View {
     private func updateExecutionHistory() {
         guard let currentRunRecord else { return }
         currentRunRecord.executionResultsJSON = AgentRunRecordCoding.encode(viewModel.executionResults)
+        currentRunRecord.loopSnapshotJSON = viewModel.loopSnapshot.flatMap { AgentRunRecordCoding.encode($0) }
         currentRunRecord.errorMessage = viewModel.errorMessage
         try? modelContext.save()
     }

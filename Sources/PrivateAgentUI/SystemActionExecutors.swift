@@ -71,15 +71,31 @@ public struct ShortcutActionExecutor: AgentActionExecuting {
 #endif
 
 public enum SystemActionExecutorFactory {
-    public static func makeDefaultExecutor() -> any AgentActionExecuting {
+    public static func platformExecutors() -> [any AgentActionExecuting] {
         #if canImport(UIKit)
-        return ActionExecutorRouter(executors: [
-            URLActionExecutor(),
-            ShortcutActionExecutor(),
-            PlanningOnlyActionExecutor()
-        ])
+        return [URLActionExecutor(), ShortcutActionExecutor()]
         #else
-        return PlanningOnlyActionExecutor()
+        return []
         #endif
+    }
+
+    public static func makeDefaultExecutor(
+        allowedModes: [AutomationMode] = [.inApp, .appIntents, .shortcuts],
+        macClient: (any MacBridgeClient)? = nil,
+        wdaClient: (any WebDriverAgentClient)? = nil
+    ) -> any AgentActionExecuting {
+        #if canImport(UIKit)
+        let navigator: any InAppNavigating = AppRouterNavigator()
+        #else
+        let navigator: any InAppNavigating = InAppWorkspaceStore.shared
+        #endif
+        return CapabilityRuntime.make(
+            allowedModes: allowedModes,
+            navigator: navigator,
+            workspace: .shared,
+            macClient: macClient,
+            wdaClient: wdaClient,
+            extraExecutors: platformExecutors()
+        ).executor
     }
 }

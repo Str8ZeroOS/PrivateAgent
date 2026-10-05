@@ -54,4 +54,53 @@ struct AgentPlannerTests {
         }
         #expect(handoff.target == .macAssisted)
     }
+
+    @Test("iPhone Mirroring observations tap the live control instead of looping a handoff")
+    func iphoneMirroringTapsObservedControl() async throws {
+        let planner = RuleBasedAgentPlanner()
+        let observation = AgentObservation(
+            source: .iphoneMirroring,
+            userGoal: "Tap Settings",
+            controls: [AgentControl(id: "ax-0", label: "Settings", role: .button)],
+            appContext: "iPhone Mirroring on Jay.lan"
+        )
+
+        let plan = try await planner.makePlan(for: observation, allowedModes: [.inApp, .macAssisted])
+        #expect(plan.requiresUserApproval == true)
+        guard case .tap(let controlId) = plan.steps[0].action else {
+            Issue.record("Expected tap on the mirrored control")
+            return
+        }
+        #expect(controlId == "ax-0")
+    }
+
+    @Test("external observations without a matching control infer a URL instead of handing off again")
+    func externalObservationInfersURL() async throws {
+        let planner = RuleBasedAgentPlanner()
+        let observation = AgentObservation(
+            source: .macBridge,
+            userGoal: "Open YouTube and tap the latest Tech Jarves video",
+            visibleText: ["Mac bridge connected", "Frontmost app: Safari"]
+        )
+        let plan = try await planner.makePlan(for: observation, allowedModes: [.macAssisted])
+        guard case .openURL(let url) = plan.steps[0].action else {
+            Issue.record("Expected inferred YouTube URL")
+            return
+        }
+        #expect(url.contains("youtube.com"))
+    }
+
+    @Test("first-party deep links stay inside PrivateAgent")
+    func deepLinkStaysInApp() async throws {
+        let planner = RuleBasedAgentPlanner()
+        let observation = AgentObservation(source: .privateAgentApp, userGoal: "Open privateagent://models")
+        let plan = try await planner.makePlan(for: observation, allowedModes: [.inApp, .appIntents])
+
+        #expect(plan.requiresUserApproval == false)
+        guard case .openURL(let url) = plan.steps[0].action else {
+            Issue.record("Expected openURL action")
+            return
+        }
+        #expect(url == "privateagent://models")
+    }
 }

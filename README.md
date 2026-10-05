@@ -68,6 +68,16 @@ swift build
 
 Deploy to your iPhone, download a model from the in-app model manager, and start chatting.
 
+## Mac + iPhone Agent Mode
+
+The MacBook helper is `192.168.12.110` with SSH on port `2222`. If you are already logged into the Mac from Windows, paste this **on the Mac**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Str8ZeroOS/PrivateAgent/cursor/ios-closed-loop-agent-2cc6/Scripts/bootstrap-mac-from-ssh.sh | bash
+```
+
+Then open the printed `privateagent://pair` link on the iPhone. Details: `Docs/MAC_IPHONE_PAIRING.md`.
+
 ## Roadmap
 
 - [ ] More model support (Qwen3-235B-A22B, DeepSeek-V3)

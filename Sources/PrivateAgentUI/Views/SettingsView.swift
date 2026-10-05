@@ -1,4 +1,5 @@
 import SwiftUI
+import AgentCore
 
 struct SettingsView: View {
     @AppStorage("maxTokens") private var maxTokens: Double = 2048
@@ -39,7 +40,7 @@ struct SettingsView: View {
                 TextField("Model", text: $cloudModel)
                     .autocorrectionDisabled()
                 #if os(iOS)
-                    .textInputAutocapitalization(.never)
+                    .textInputAutocapitalization(.never) // cross-platform-check: allow
                 #endif
                 if keySaved {
                     Text("A key is saved in the Keychain.")
@@ -75,6 +76,14 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .workspaceSnapshot(
+            .settings,
+            extraVisibleText: testResult.isEmpty ? [] : [testResult],
+            traits: [
+                "cloudEnabled": cloudEnabled ? "true" : "false",
+                "keySaved": keySaved ? "true" : "false"
+            ]
+        )
         .onAppear {
             if CloudSettings.importKeyFromDocuments() { cloudEnabled = true }
             keySaved = CloudSettings.apiKey != nil

@@ -87,6 +87,14 @@ private struct AgentRunRecordDetailView: View {
                         .textSelection(.enabled)
                 }
             }
+
+            if let loopSnapshotJSON = record.loopSnapshotJSON {
+                Section("Loop Snapshot") {
+                    Text(loopSnapshotJSON)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
         }
         .navigationTitle("Agent Run")
     }

@@ -14,9 +14,23 @@ build/
 .swiftpm/
 Package.resolved
 
+# fastlane (generated on the Actions runner)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/README.md
+fastlane/test_output/
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local Mac/iPhone pairing (tokens stay on the machine)
+.privateagent/
+*.bridge.env
 
 # Models (downloaded, not committed)
 Models/

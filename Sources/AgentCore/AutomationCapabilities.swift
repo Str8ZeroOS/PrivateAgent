@@ -67,7 +67,7 @@ public enum AutomationCapabilities {
             isAppStoreSafe: true,
             canReadExternalApps: true,
             canControlExternalApps: true,
-            notes: "Closest App-Store-safe path to Android-style control when paired with a trusted Mac bridge."
+            notes: "Closest App-Store-safe path to Android-style control when paired with a trusted Mac bridge. Opt-in iPhone Mirroring observation reads the Mac-side mirrored window, not iOS Accessibility."
         ),
         AutomationCapability(
             mode: .webDriverAgent,

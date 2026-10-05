@@ -13,6 +13,7 @@ public final class AgentRunRecord {
     public var planJSON: String?
     public var diagnosticsJSON: String?
     public var executionResultsJSON: String?
+    public var loopSnapshotJSON: String?
     public var errorMessage: String?
 
     public init(
@@ -25,6 +26,7 @@ public final class AgentRunRecord {
         planJSON: String? = nil,
         diagnosticsJSON: String? = nil,
         executionResultsJSON: String? = nil,
+        loopSnapshotJSON: String? = nil,
         errorMessage: String? = nil
     ) {
         self.id = id
@@ -36,6 +38,7 @@ public final class AgentRunRecord {
         self.planJSON = planJSON
         self.diagnosticsJSON = diagnosticsJSON
         self.executionResultsJSON = executionResultsJSON
+        self.loopSnapshotJSON = loopSnapshotJSON
         self.errorMessage = errorMessage
     }
 }
