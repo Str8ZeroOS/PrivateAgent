@@ -28,7 +28,7 @@ public struct AgentModeView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                TextField("What should PrivateAgent do?", text: $viewModel.goal, axis: .vertical)
+                TextField("What should Str8ZeRO do?", text: $viewModel.goal, axis: .vertical)
                     .lineLimit(3...6)
 
                 HStack {

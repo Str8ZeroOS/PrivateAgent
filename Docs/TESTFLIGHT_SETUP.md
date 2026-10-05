@@ -163,8 +163,12 @@ TestFlight upload:
 
 1. Confirm every required secret is set.
 2. `git tag v1.0.0 && git push origin v1.0.0`
-3. When it succeeds, the IPA is stored as the `PrivateAgent-v1.0.0-ipa` artifact.
+3. When it succeeds, the IPA is stored as the `PrivateAgent-v1.0.0-ipa` artifact. CI runs a local IPA preflight and `xcrun altool --validate-app` before upload.
 4. In App Store Connect, open the app → TestFlight. Processing can take several minutes after the job finishes (`skip_waiting_for_build_processing` is on).
+
+The home-screen name is **Str8ZeRO** (`CFBundleDisplayName` / `CFBundleName`). The Xcode target and scheme stay `PrivateAgentApp`, and the bundle id stays `com.jaytrujillo.privateagent` (repository variable `IOS_BUNDLE_ID`).
+
+The checked-in App Icon is the Str8ZeRO wordmark on black (`Design/Str8ZeRO_AppIcon_1024.png`, opaque RGB, no alpha). All catalog sizes (1024 / 180 / 167 / 152 / 120) are generated from that master with `python3 Scripts/generate-app-icon.py --from-png Design/Str8ZeRO_AppIcon_1024.png` and live under `Apps/PrivateAgentiOS/Assets.xcassets/AppIcon.appiconset/`.
 
 The Sierra MacBook is not used for this path. Do not install Xcode 6-era tools or iPhone Mirroring on it.
 

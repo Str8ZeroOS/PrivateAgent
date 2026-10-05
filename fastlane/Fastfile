@@ -1,3 +1,5 @@
+require "fileutils"
+
 default_platform(:ios)
 
 platform :ios do
@@ -26,5 +28,20 @@ platform :ios do
       skip_waiting_for_build_processing: true,
       changelog: ENV.fetch("TESTFLIGHT_CHANGELOG", "CI build #{ENV.fetch('GITHUB_RUN_NUMBER', 'local')}")
     )
+  end
+
+  desc "Validate an IPA with altool before TestFlight upload"
+  lane :validate_ipa do
+    key_id = ENV.fetch("ASC_KEY_ID") { UI.user_error!("ASC_KEY_ID is missing") }
+    issuer_id = ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID is missing") }
+    key_path = ENV.fetch("ASC_KEY_PATH") { UI.user_error!("ASC_KEY_PATH is missing") }
+    ipa = ENV.fetch("IPA_PATH") { UI.user_error!("IPA_PATH is missing") }
+
+    keys_dir = File.expand_path("~/.appstoreconnect/private_keys")
+    FileUtils.mkdir_p(keys_dir)
+    dest = File.join(keys_dir, "AuthKey_#{key_id}.p8")
+    FileUtils.cp(key_path, dest)
+
+    sh("xcrun", "altool", "--validate-app", "-f", ipa, "-t", "ios", "--apiKey", key_id, "--apiIssuer", issuer_id)
   end
 end

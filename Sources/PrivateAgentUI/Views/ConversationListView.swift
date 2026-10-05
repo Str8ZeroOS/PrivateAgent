@@ -35,7 +35,7 @@ struct ConversationListView: View {
             .onDelete(perform: deleteConversations)
         }
         .searchable(text: $searchText, prompt: "Search conversations")
-        .navigationTitle("Chats")
+        .navigationTitle("Str8ZeRO")
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow
