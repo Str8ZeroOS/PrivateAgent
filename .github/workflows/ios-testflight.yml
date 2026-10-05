@@ -1,9 +1,11 @@
 name: iOS TestFlight
 
 on:
-  workflow_dispatch:
   push:
+    tags:
+      - "*"        # TestFlight runs only on tags
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -48,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! xcodegen generate; then
-            echo "::error::xcodegen failed to parse project.yml. A Plist/info block needs an explicit path, and every source path must exist. See project.yml and Apps/PrivateAgentiOS/Info.plist."
+            echo "::error::xcodegen failed to parse project.yml. A Plist/info block needs an explicit path, and every source path must exist."
             exit 1
           fi
           test -d PrivateAgent.xcodeproj
@@ -88,7 +90,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     needs: simulator
-    if: github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/')   # Only run on tags
 
     steps:
       - name: Check out repository
@@ -148,7 +150,7 @@ jobs:
           security find-identity -v -p codesigning "$KCP"
 
           if ! security find-identity -v -p codesigning "$KCP" | grep -q "Apple Distribution"; then
-            echo "::error::The imported .p12 does not contain an Apple Distribution identity. Create an iOS Distribution certificate, not a Development certificate. See Docs/TESTFLIGHT_SETUP.md"
+            echo "::error::The imported .p12 does not contain an Apple Distribution identity."
             exit 1
           fi
 
@@ -165,7 +167,7 @@ jobs:
             exit 1
           fi
           if [[ "$PROFILE_BUNDLE" != "$IOS_BUNDLE_ID" ]]; then
-            echo "::error::Bundle id $IOS_BUNDLE_ID does not match the provisioning profile ($PROFILE_BUNDLE). Set repository variable IOS_BUNDLE_ID or recreate the profile."
+            echo "::error::Bundle id $IOS_BUNDLE_ID does not match the provisioning profile ($PROFILE_BUNDLE)."
             exit 1
           fi
 
@@ -173,7 +175,6 @@ jobs:
           cp "$RUNNER_TEMP/appstore.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
           echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
           echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
-          echo "Imported profile '$NAME' ($UUID) for $PROFILE_BUNDLE / $TEAM"
 
       - name: Generate signed Xcode project
         env:
@@ -248,10 +249,10 @@ jobs:
             echo "::error::xcodebuild -exportArchive did not produce an IPA."
             exit 1
           fi
+
           echo "IPA_PATH=$IPA" >> "$GITHUB_ENV"
           mkdir -p out
           cp "$IPA" out/PrivateAgent-testflight.ipa
-          echo "Exported $IPA"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -270,8 +271,7 @@ jobs:
           TESTFLIGHT_CHANGELOG: "GitHub Actions ${{ github.run_number }} (${{ github.sha }})"
         run: |
           set -euo pipefail
-          bundle_cmd=(fastlane ios upload_testflight)
-          "${bundle_cmd[@]}" | tee ios-testflight-upload.log
+          fastlane ios upload_testflight | tee ios-testflight-upload.log
 
       - name: Cleanup keychain
         if: always()
