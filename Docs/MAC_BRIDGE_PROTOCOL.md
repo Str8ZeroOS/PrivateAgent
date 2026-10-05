@@ -124,3 +124,5 @@ To get closer to Android-style automation, add adapters in this order:
 4. **OCR/vision fallback**: identify visible text when structured accessibility metadata is unavailable.
 
 Each adapter should plug into the same `/observation` and `/action` protocol instead of changing the iOS planning layer.
+
+Agent Mode now composes these adapters at runtime: when Mac-assisted or WebDriverAgent is allowed and a host is configured, `CapabilityRuntime` observes and executes through that client instead of leaving the contracts unused.

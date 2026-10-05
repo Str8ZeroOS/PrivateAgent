@@ -85,11 +85,11 @@ public struct InAppObserver: AgentObserving {
     }
 }
 
-public struct MacBridgeObserver<Client: MacBridgeClient>: AgentObserving {
-    private let client: Client
+public struct MacBridgeObserver: AgentObserving {
+    private let client: any MacBridgeClient
     private let fallback: InAppObserver
 
-    public init(client: Client, fallback: InAppObserver = InAppObserver()) {
+    public init(client: any MacBridgeClient, fallback: InAppObserver = InAppObserver()) {
         self.client = client
         self.fallback = fallback
     }

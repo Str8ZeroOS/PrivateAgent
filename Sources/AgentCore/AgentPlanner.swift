@@ -26,7 +26,7 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         }
 
         if isExternalObservationSource(observation.source) {
-            return externalHandoffPlan(allowedModes: allowedModes)
+            return externalObservationPlan(for: observation, allowedModes: allowedModes)
         }
 
         if let deepLinkPlan = deepLinkPlan(for: observation) {
@@ -65,6 +65,88 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         }
     }
 
+    private func externalObservationPlan(for observation: AgentObservation, allowedModes _: [AutomationMode]) -> AgentPlan {
+        if let control = matchingObservedControl(in: observation) {
+            return AgentPlan(
+                summary: "Use a control from the current Mac/WDA observation.",
+                steps: [
+                    AgentStep(
+                        action: .tap(controlId: control.id),
+                        rationale: "The live external observation includes this control.",
+                        target: control.id,
+                        risk: .medium,
+                        requiresApproval: true,
+                        expectedResult: control.label,
+                        verification: .visibleTextContains(control.label)
+                    )
+                ],
+                requiresUserApproval: true,
+                risk: .medium
+            )
+        }
+
+        if let text = quotedText(in: observation.userGoal),
+           let field = observation.controls.first(where: { $0.role == .textField }) {
+            return AgentPlan(
+                summary: "Type into the observed field.",
+                steps: [
+                    AgentStep(
+                        action: .type(controlId: field.id, text: text),
+                        rationale: "The goal includes quoted text and the current observation has a text field.",
+                        target: field.id,
+                        risk: .medium,
+                        requiresApproval: true,
+                        expectedResult: text,
+                        verification: .visibleTextContains(text)
+                    )
+                ],
+                requiresUserApproval: true,
+                risk: .medium
+            )
+        }
+
+        if let url = ExternalGoalURL.inferred(from: observation.userGoal),
+           InAppDeepLink.screen(from: url) == nil {
+            return AgentPlan(
+                summary: "Open a URL through the paired external adapter.",
+                steps: [
+                    AgentStep(
+                        action: .openURL(url),
+                        rationale: "No matching control is visible yet; open the inferred destination first.",
+                        target: url,
+                        risk: .medium,
+                        requiresApproval: true,
+                        expectedResult: url,
+                        verification: .urlContains(url)
+                    )
+                ],
+                requiresUserApproval: true,
+                risk: .medium
+            )
+        }
+
+        return AgentPlan(
+            summary: "Ask for a visible external target.",
+            steps: [
+                AgentStep(
+                    action: .askUser("No matching control is visible on the current Mac/WDA screen. Which control should I use?"),
+                    rationale: "The observation is already external; handing off again would loop.",
+                    target: "user",
+                    expectedResult: "User identifies a visible control"
+                )
+            ]
+        )
+    }
+
+    private func quotedText(in goal: String) -> String? {
+        guard let start = goal.firstIndex(of: "\""),
+              let end = goal[goal.index(after: start)...].firstIndex(of: "\"") else {
+            return nil
+        }
+        let text = String(goal[goal.index(after: start)..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
     private func externalHandoffPlan(allowedModes: [AutomationMode]) -> AgentPlan {
         let target = bestExternalMode(from: allowedModes)
         return AgentPlan(
@@ -86,7 +168,7 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
 
     private func requiresExternalAutomation(observation: AgentObservation) -> Bool {
         let goal = observation.userGoal.lowercased()
-        if matchingWorkspaceControl(in: observation) != nil {
+        if matchingObservedControl(in: observation) != nil {
             return false
         }
         let externalSignals = [
@@ -97,7 +179,7 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         if externalSignals.contains(where: { goal.contains($0) }) {
             return true
         }
-        if goal.contains("tap") && matchingWorkspaceControl(in: observation) == nil {
+        if goal.contains("tap") && matchingObservedControl(in: observation) == nil {
             return true
         }
         return false
@@ -123,7 +205,7 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
     }
 
     private func inAppWorkspacePlan(for observation: AgentObservation, allowedModes: [AutomationMode]) -> AgentPlan? {
-        if let control = matchingWorkspaceControl(in: observation) {
+        if let control = matchingObservedControl(in: observation) {
             return AgentPlan(
                 summary: "Use a PrivateAgent workspace control.",
                 steps: [
@@ -159,11 +241,18 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         return nil
     }
 
-    private func matchingWorkspaceControl(in observation: AgentObservation) -> AgentControl? {
+    private func matchingObservedControl(in observation: AgentObservation) -> AgentControl? {
         let goal = observation.userGoal.lowercased()
-        let controls = observation.controls.isEmpty ? InAppWorkspace.allControls() : observation.controls
+        let controls: [AgentControl]
+        if isExternalObservationSource(observation.source) {
+            controls = observation.controls
+        } else {
+            controls = observation.controls.isEmpty ? InAppWorkspace.allControls() : observation.controls
+        }
         return controls.first { control in
-            goal.contains(control.label.lowercased()) || goal.contains(control.id.lowercased())
+            let label = control.label.lowercased()
+            let id = control.id.lowercased()
+            return (!label.isEmpty && goal.contains(label)) || (!id.isEmpty && goal.contains(id))
         }
     }
 

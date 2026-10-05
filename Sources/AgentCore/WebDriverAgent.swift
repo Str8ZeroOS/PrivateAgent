@@ -122,12 +122,12 @@ public struct LocalWebDriverAgentClient: WebDriverAgentClient {
     }
 }
 
-public struct WebDriverAgentActionExecutor<Client: WebDriverAgentClient>: AgentActionExecuting {
-    private let client: Client
+public struct WebDriverAgentActionExecutor: AgentActionExecuting {
+    private let client: any WebDriverAgentClient
     private let sessionId: UUID
     private let requiresUserApproval: Bool
 
-    public init(client: Client, sessionId: UUID = UUID(), requiresUserApproval: Bool = true) {
+    public init(client: any WebDriverAgentClient, sessionId: UUID = UUID(), requiresUserApproval: Bool = true) {
         self.client = client
         self.sessionId = sessionId
         self.requiresUserApproval = requiresUserApproval
@@ -162,11 +162,11 @@ public struct WebDriverAgentActionExecutor<Client: WebDriverAgentClient>: AgentA
     }
 }
 
-public struct WebDriverAgentObserver<Client: WebDriverAgentClient>: AgentObserving {
-    private let client: Client
+public struct WebDriverAgentObserver: AgentObserving {
+    private let client: any WebDriverAgentClient
     private let fallback: InAppObserver
 
-    public init(client: Client, fallback: InAppObserver = InAppObserver()) {
+    public init(client: any WebDriverAgentClient, fallback: InAppObserver = InAppObserver()) {
         self.client = client
         self.fallback = fallback
     }

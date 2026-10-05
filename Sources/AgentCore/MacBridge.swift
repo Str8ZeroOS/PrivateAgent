@@ -41,12 +41,12 @@ public protocol MacBridgeClient: Sendable {
     func executeAction(_ request: MacBridgeActionRequest) async throws -> MacBridgeResponse
 }
 
-public struct MacBridgeActionExecutor<Client: MacBridgeClient>: AgentActionExecuting {
-    private let client: Client
+public struct MacBridgeActionExecutor: AgentActionExecuting {
+    private let client: any MacBridgeClient
     private let sessionId: UUID
     private let requiresUserApproval: Bool
 
-    public init(client: Client, sessionId: UUID = UUID(), requiresUserApproval: Bool = true) {
+    public init(client: any MacBridgeClient, sessionId: UUID = UUID(), requiresUserApproval: Bool = true) {
         self.client = client
         self.sessionId = sessionId
         self.requiresUserApproval = requiresUserApproval
@@ -54,8 +54,10 @@ public struct MacBridgeActionExecutor<Client: MacBridgeClient>: AgentActionExecu
 
     public func canExecute(_ action: AgentAction) -> Bool {
         switch action {
-        case .openURL, .tap, .type, .scroll, .wait, .handoff:
+        case .openURL, .tap, .type, .scroll, .wait:
             return true
+        case .handoff(let handoff):
+            return handoff.target == .macAssisted
         case .answer, .askUser, .runShortcut, .invokeAppIntent:
             return false
         }

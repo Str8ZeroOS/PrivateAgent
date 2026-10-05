@@ -50,6 +50,7 @@ Hard limits, with no unbounded loops:
 | Executors | Runs approved actions with capability fallback | `PlanRunner`, `ActionExecutorRouter`, in-app, App Intents, URL, Shortcuts |
 | Verification | `ACTION_SUCCESS` vs `ACTION_VERIFIED` | `ActionVerifier`, `GoalVerifier` |
 | Recovery | Transient retry, wrong-target re-observe, permission guidance, capability fallback, or stop | `RecoveryEngine`, `CapabilityFallback` |
+| Capability runtime | Compose in-app + Mac + WDA observer/executor for the current allowed modes | `CapabilityRuntime`, `CapabilityObserver` |
 | Mac bridge | Cross-app observation/action handoff | `MacBridgeClient`, `LocalBridgeClient`, `MacBridgeActionExecutor` |
 | In-app workspace | First-party screens, controls, App Intents, and `privateagent://` deep links | `InAppWorkspace`, `InAppDeepLink`, `InAppActionExecutor`, `AppIntentActionExecutor` |
 | Live snapshots | SwiftUI screens publish `AccessibilitySnapshot` into the workspace store | `InAppWorkspaceStore.publish`, `WorkspaceSnapshotPublisher` |
@@ -95,7 +96,9 @@ Capability fallback order when a primary executor is unavailable:
 - SwiftUI screens publish a live `AccessibilitySnapshot` (visible text, controls, traits) that merges over the static catalog.
 - Agent Mode shows observed controls, visible text, and observation source from the latest loop observation.
 - SwiftUI navigation for Agent Mode, Models, Settings, and new chat via `AppRouter`.
-- iPhone Mirroring is an opt-in Mac observation source. The helper labels the frontmost iPhone Mirroring window as `iphoneMirroring`; the planner treats that as external control, not in-app UI.
+- iPhone Mirroring is an opt-in Mac observation source. The helper labels the frontmost iPhone Mirroring window as `iphoneMirroring`. The planner taps live mirrored/Mac/WDA controls instead of looping another handoff.
+- `CapabilityRuntime` wires Agent Mode: if Mac-assisted or WebDriverAgent is allowed and a client is configured, the loop observes and acts through that adapter, then falls back to the in-app store.
+- Agent Mode includes Mac bridge and WebDriverAgent connection fields plus health/status checks.
 - WebDriverAgent adapter process: `Bridge/wda_adapter.py`.
 - Opt-in Mac AX observation and AX click in `Bridge/mac_bridge_helper.py`.
 - AgentCore is Foundation-only. UIKit stays behind `#if canImport(UIKit)` in `PrivateAgentUI`.
@@ -118,8 +121,8 @@ When a goal needs those capabilities, the planner must hand off to an allowed ex
 
 1. Full `swift build` / `swift test` of FlashMoE, Metal, and `PrivateAgentUI` on macOS (Linux only builds AgentCore).
 2. Xcode iOS app compile, signing, and on-device Agent Mode plus Siri/Shortcuts phrase checks for the new App Intents.
-3. Run the Mac helper with `--enable-ax-observation` and `--enable-accessibility-actions` on a paired Mac that has Accessibility permission.
-4. Run `Bridge/wda_adapter.py` against a real WebDriverAgent session on a developer device.
+3. Run the Mac helper with `--enable-ax-observation` and `--enable-accessibility-actions` on a paired Mac that has Accessibility permission, then enable Mac-assisted mode in Agent Mode.
+4. Run `Bridge/wda_adapter.py` against a real WebDriverAgent session on a developer device, then enable WebDriverAgent mode in Agent Mode.
 5. Verify live SwiftUI snapshots and `privateagent://` deep links on a signed iOS device, including Siri phrases for `OpenURLIntent`.
 6. Run the Mac helper with `--enable-iphone-mirroring` (and optionally `--enable-ax-observation`) while iPhone Mirroring is frontmost to capture the mirrored-window AX names.
 

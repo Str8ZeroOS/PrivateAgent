@@ -62,4 +62,59 @@ struct VerifierTests {
         )
         #expect(result.isSatisfied)
     }
+
+    @Test("goal verifier keeps going after a handoff once a Mac observation is live")
+    func handoffContinuesOnMacObservation() {
+        let step = AgentStep(
+            action: .handoff(AgentHandoff(target: .macAssisted, reason: "Need the Mac bridge")),
+            rationale: "External"
+        )
+        let record = StepRunRecord(
+            step: step,
+            execution: ActionExecutionResult(action: step.action, status: .completed, message: "Accepted"),
+            outcome: .actionSuccess
+        )
+        let stillLocal = GoalVerifier().verify(
+            goal: "Tap Instagram",
+            observation: AgentObservation(source: .privateAgentApp, userGoal: "Tap Instagram"),
+            history: [record]
+        )
+        #expect(stillLocal.isSatisfied)
+
+        let onMac = GoalVerifier().verify(
+            goal: "Tap Instagram",
+            observation: AgentObservation(
+                source: .macBridge,
+                userGoal: "Tap Instagram",
+                controls: [AgentControl(id: "ax-0", label: "Instagram", role: .button)]
+            ),
+            history: [record]
+        )
+        #expect(!onMac.isSatisfied)
+    }
+
+    @Test("goal verifier completes a first-party deep link")
+    func completesDeepLink() {
+        let step = AgentStep(
+            action: .openURL("privateagent://models"),
+            rationale: "Deep link",
+            verification: .appContextContains("models")
+        )
+        let record = StepRunRecord(
+            step: step,
+            execution: ActionExecutionResult(action: step.action, status: .completed, message: "Opened"),
+            verification: StepVerificationResult(outcome: .actionVerified, verified: true, message: "ok"),
+            outcome: .actionVerified
+        )
+        let result = GoalVerifier().verify(
+            goal: "Open privateagent://models",
+            observation: AgentObservation(
+                source: .privateAgentApp,
+                userGoal: "Open privateagent://models",
+                appContext: "PrivateAgent.models"
+            ),
+            history: [record]
+        )
+        #expect(result.isSatisfied)
+    }
 }

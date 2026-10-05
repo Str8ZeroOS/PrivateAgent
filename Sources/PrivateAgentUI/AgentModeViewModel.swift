@@ -27,7 +27,11 @@ public final class AgentModeViewModel {
     public var bridgeHost: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgeHost") ?? ""
     public var bridgePort: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgePort") ?? "8765"
     public var bridgeToken: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgeToken") ?? ""
+    public var wdaHost: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaHost") ?? "127.0.0.1"
+    public var wdaPort: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaPort") ?? "8101"
+    public var wdaToken: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaToken") ?? ""
     public private(set) var bridgeStatus: String?
+    public private(set) var wdaStatus: String?
     public private(set) var plan: AgentPlan?
     public private(set) var plannerDiagnostics: AgentPlannerDiagnostics?
     public private(set) var executionResults: [ActionExecutionResult] = []
@@ -61,6 +65,9 @@ public final class AgentModeViewModel {
         UserDefaults.standard.set(bridgeHost, forKey: "PrivateAgent.bridgeHost")
         UserDefaults.standard.set(bridgePort, forKey: "PrivateAgent.bridgePort")
         UserDefaults.standard.set(bridgeToken, forKey: "PrivateAgent.bridgeToken")
+        UserDefaults.standard.set(wdaHost, forKey: "PrivateAgent.wdaHost")
+        UserDefaults.standard.set(wdaPort, forKey: "PrivateAgent.wdaPort")
+        UserDefaults.standard.set(wdaToken, forKey: "PrivateAgent.wdaToken")
     }
 
     public func checkBridgeHealth() async {
@@ -79,6 +86,27 @@ public final class AgentModeViewModel {
             bridgeStatus = "Connected: \(health.status)\(mode)"
         } catch {
             bridgeStatus = "Connection failed: \(error.localizedDescription)"
+        }
+    }
+
+    public func checkWDAStatus() async {
+        saveBridgeSettings()
+        wdaStatus = "Checking..."
+        errorMessage = nil
+
+        guard let client = makeWDAClient() else {
+            wdaStatus = "Enter a valid WebDriverAgent host and port."
+            return
+        }
+
+        do {
+            let status = try await client.status()
+            let session = status.sessionId.map { " session=\($0)" } ?? ""
+            wdaStatus = status.ready
+                ? "Ready: \(status.message)\(session)"
+                : "Not ready: \(status.message)"
+        } catch {
+            wdaStatus = "Connection failed: \(error.localizedDescription)"
         }
     }
 
@@ -163,11 +191,21 @@ public final class AgentModeViewModel {
             self?.apply(event)
         }
 
+        saveBridgeSettings()
+        let runtime = CapabilityRuntime.make(
+            allowedModes: allowedModes,
+            navigator: AppRouterNavigator(),
+            workspace: .shared,
+            macClient: allowedModes.contains(.macAssisted) ? makeBridgeClient() : nil,
+            wdaClient: allowedModes.contains(.webDriverAgent) ? makeWDAClient() : nil,
+            extraExecutors: SystemActionExecutorFactory.platformExecutors()
+        )
+
         let loop = AgentLoop(
             configuration: AgentLoopConfiguration(
-                observer: LiveWorkspaceObserver(store: .shared),
+                observer: runtime.observer,
                 planner: planner,
-                executor: SystemActionExecutorFactory.makeDefaultExecutor(),
+                executor: runtime.executor,
                 approval: broker,
                 allowedModes: allowedModes,
                 eventHandler: { event in
@@ -252,5 +290,19 @@ public final class AgentModeViewModel {
         guard let url = components.url else { return nil }
 
         return LocalBridgeClient(baseURL: url, token: bridgeToken)
+    }
+
+    private func makeWDAClient() -> LocalWebDriverAgentClient? {
+        let trimmedHost = wdaHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPort = wdaPort.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty, let port = Int(trimmedPort), port > 0 else { return nil }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = trimmedHost
+        components.port = port
+        guard let url = components.url else { return nil }
+
+        return LocalWebDriverAgentClient(baseURL: url, token: wdaToken)
     }
 }

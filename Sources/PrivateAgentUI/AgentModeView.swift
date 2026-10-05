@@ -109,6 +109,25 @@ public struct AgentModeView: View {
                 }
             }
 
+            Section("WebDriverAgent") {
+                Text("Developer-device only. Not App Store safe.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Host", text: $viewModel.wdaHost)
+                TextField("Port", text: $viewModel.wdaPort)
+                SecureField("Token", text: $viewModel.wdaToken)
+
+                Button("Check WDA") {
+                    Task { await viewModel.checkWDAStatus() }
+                }
+
+                if let wdaStatus = viewModel.wdaStatus {
+                    Text(wdaStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Allowed Modes") {
                 ForEach(AutomationCapabilities.supportedModes) { capability in
                     Toggle(isOn: binding(for: capability.mode)) {
