@@ -6,7 +6,9 @@ PrivateAgent started as an offline iOS LLM runtime. The Android PrivateAgent exp
 
 The Agent Mode path is no longer a one-shot plan runner. `AgentLoop` drives:
 
-`Goal -> Observe -> Plan -> Validate -> (Approval if needed) -> Execute -> Observe result -> Verify -> Recover/Retry -> Complete`
+`Goal -> split sub-goals -> (Observe -> Plan next unfinished sub-goal -> Validate -> Approval? -> Execute -> Observe result -> Verify -> Recover/Retry)* -> Complete only when every sub-goal is verified`
+
+Compound goals (`then` / `and then` / `after that` / action commas) stay open until each clause is verified. A verified tap or an echoed in-app answer is not enough to finish a multi-step request. Tasks that need another app (Apple Notes and similar) end `blocked`/`failed`, not `completed`.
 
 ### State machine
 
@@ -48,7 +50,7 @@ Hard limits, with no unbounded loops:
 | Session | Holds allowed modes and latest rule-based plan | `AgentSession` actor |
 | UI bridge | Presents live Agent Mode state in SwiftUI | `AgentModeView`, `AgentModeViewModel` |
 | Executors | Runs approved actions with capability fallback | `PlanRunner`, `ActionExecutorRouter`, in-app, App Intents, URL, Shortcuts |
-| Verification | `ACTION_SUCCESS` vs `ACTION_VERIFIED` | `ActionVerifier`, `GoalVerifier` |
+| Verification | `ACTION_SUCCESS` vs `ACTION_VERIFIED`; whole-goal done only after every sub-goal | `ActionVerifier`, `GoalVerifier`, `GoalBreakdown` |
 | Recovery | Transient retry, wrong-target re-observe, permission guidance, capability fallback, or stop | `RecoveryEngine`, `CapabilityFallback` |
 | Capability runtime | Compose in-app + Mac + WDA observer/executor for the current allowed modes | `CapabilityRuntime`, `CapabilityObserver` |
 | Mac bridge | Cross-app observation/action handoff | `MacBridgeClient`, `LocalBridgeClient`, `MacBridgeActionExecutor` |

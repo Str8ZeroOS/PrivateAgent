@@ -133,7 +133,9 @@ public actor InAppWorkspaceStore: InAppNavigating {
                 succeeded: false
             )
         }
-        if let destination = Self.destination(for: controlId) {
+        if controlId == "nav.back" {
+            screen = (screen == .settings || screen == .models) ? .agentMode : .chats
+        } else if let destination = Self.destination(for: controlId) {
             screen = destination
         }
         return InAppNavigationResult(
@@ -155,6 +157,8 @@ public actor InAppWorkspaceStore: InAppNavigating {
             return .chat
         case "nav.chats":
             return .chats
+        case "nav.back":
+            return .agentMode
         default:
             return nil
         }

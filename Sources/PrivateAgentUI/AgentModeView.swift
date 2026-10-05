@@ -71,6 +71,27 @@ public struct AgentModeView: View {
                 }
             }
 
+            if let progress = viewModel.loopSnapshot?.goalProgress, !progress.subGoals.isEmpty {
+                Section("Sub-goals") {
+                    ForEach(progress.subGoals) { subGoal in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(subGoal.text)
+                            Text(subGoal.status.rawValue)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            if let detail = subGoal.detail, !detail.isEmpty {
+                                Text(detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    if let answer = progress.finalAnswer, !answer.isEmpty {
+                        LabeledContent("Final answer", value: answer)
+                    }
+                }
+            }
+
             if let observation = viewModel.lastObservation, !observation.controls.isEmpty {
                 Section("Observed Controls") {
                     ForEach(observation.controls) { control in

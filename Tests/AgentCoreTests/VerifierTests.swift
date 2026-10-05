@@ -79,7 +79,7 @@ struct VerifierTests {
             observation: AgentObservation(source: .privateAgentApp, userGoal: "Tap Instagram"),
             history: [record]
         )
-        #expect(stillLocal.isSatisfied)
+        #expect(!stillLocal.isSatisfied)
 
         let onMac = GoalVerifier().verify(
             goal: "Tap Instagram",
@@ -116,5 +116,51 @@ struct VerifierTests {
             history: [record]
         )
         #expect(result.isSatisfied)
+    }
+
+    @Test("goal verifier does not finish a compound goal after the first verified tap")
+    func compoundGoalStaysOpenAfterFirstTap() {
+        let step = AgentStep(
+            action: .tap(controlId: "nav.settings"),
+            rationale: "Open settings",
+            verification: .visibleTextContains("Settings")
+        )
+        let record = StepRunRecord(
+            step: step,
+            execution: ActionExecutionResult(action: step.action, status: .completed, message: "Activated Settings. screen=settings"),
+            verification: StepVerificationResult(outcome: .actionVerified, verified: true, message: "Visible text contains Settings"),
+            outcome: .actionVerified
+        )
+        let result = GoalVerifier().verify(
+            goal: "Open Settings, then return to Agent Mode, then reply LOOP_OK",
+            observation: AgentObservation(
+                source: .privateAgentApp,
+                userGoal: "Open Settings, then return to Agent Mode, then reply LOOP_OK",
+                visibleText: ["Settings"],
+                appContext: "PrivateAgent.settings"
+            ),
+            history: [record]
+        )
+        #expect(!result.isSatisfied)
+        #expect(result.message.contains("1/3") || result.message.contains("Next:"))
+    }
+
+    @Test("echoed answer does not satisfy an Apple Notes goal")
+    func notesEchoIsNotSuccess() {
+        let step = AgentStep(action: .answer("Create a new note titled Agent Test"), rationale: "Echo")
+        let record = StepRunRecord(
+            step: step,
+            execution: ActionExecutionResult(action: step.action, status: .completed, message: "Create a new note titled Agent Test"),
+            outcome: .actionSuccess
+        )
+        let result = GoalVerifier().verify(
+            goal: "Create a new note titled Agent Test with the body hello",
+            observation: AgentObservation(
+                source: .privateAgentApp,
+                userGoal: "Create a new note titled Agent Test with the body hello"
+            ),
+            history: [record]
+        )
+        #expect(!result.isSatisfied)
     }
 }

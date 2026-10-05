@@ -8,8 +8,8 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
     public init() {}
 
     public func makePlan(for observation: AgentObservation, allowedModes: [AutomationMode]) async throws -> AgentPlan {
-        let trimmedGoal = observation.userGoal.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedGoal.isEmpty else {
+        let originalGoal = observation.userGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !originalGoal.isEmpty else {
             return AgentPlan(
                 summary: "Ask for a task before acting.",
                 steps: [
@@ -25,19 +25,47 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
             )
         }
 
-        if isExternalObservationSource(observation.source) {
-            return externalObservationPlan(for: observation, allowedModes: allowedModes)
+        let workingGoal = GoalBreakdown.firstClause(of: originalGoal)
+        var focused = observation
+        focused.userGoal = workingGoal
+
+        if let reply = GoalBreakdown.parseReply(workingGoal) {
+            return AgentPlan(
+                summary: "Reply with the requested text.",
+                steps: [
+                    AgentStep(
+                        action: .answer(reply),
+                        rationale: "The current sub-goal asks to reply or say this exact text.",
+                        target: "privateAgent",
+                        expectedResult: reply
+                    )
+                ],
+                requiresUserApproval: false,
+                risk: .low
+            )
         }
 
-        if let deepLinkPlan = deepLinkPlan(for: observation) {
+        if isExternalObservationSource(focused.source) {
+            return externalObservationPlan(for: focused, allowedModes: allowedModes)
+        }
+
+        if GoalBreakdown.isUndriveableExternalApp(workingGoal) {
+            return undriveableExternalPlan(for: workingGoal, allowedModes: allowedModes)
+        }
+
+        if let returnPlan = returnToScreenPlan(for: workingGoal, allowedModes: allowedModes) {
+            return returnPlan
+        }
+
+        if let deepLinkPlan = deepLinkPlan(for: focused) {
             return deepLinkPlan
         }
 
-        if let workspacePlan = inAppWorkspacePlan(for: observation, allowedModes: allowedModes) {
+        if let workspacePlan = inAppWorkspacePlan(for: focused, allowedModes: allowedModes) {
             return workspacePlan
         }
 
-        if requiresExternalAutomation(observation: observation) {
+        if requiresExternalAutomation(observation: focused) {
             return externalHandoffPlan(allowedModes: allowedModes)
         }
 
@@ -45,10 +73,10 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
             summary: "Handle the request inside PrivateAgent.",
             steps: [
                 AgentStep(
-                    action: .answer(trimmedGoal),
+                    action: .answer(workingGoal),
                     rationale: "The task can be handled by the local chat/model workspace without external app control.",
                     target: "privateAgent",
-                    expectedResult: trimmedGoal
+                    expectedResult: workingGoal
                 )
             ],
             requiresUserApproval: false,
@@ -174,7 +202,8 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
         let externalSignals = [
             "swipe", "scroll", "open app", "instagram", "youtube", "telegram", "chrome", "safari",
             "control my phone", "use my phone", "iphone settings", "ios settings", "system settings",
-            "settings app", "iphone mirroring"
+            "settings app", "iphone mirroring", "apple notes", "notes app", "create a new note",
+            "new note titled"
         ]
         if externalSignals.contains(where: { goal.contains($0) }) {
             return true
@@ -183,6 +212,70 @@ public struct RuleBasedAgentPlanner: AgentPlanning {
             return true
         }
         return false
+    }
+
+    private func returnToScreenPlan(for goal: String, allowedModes: [AutomationMode]) -> AgentPlan? {
+        let lowered = goal.lowercased()
+        let isReturn = ["return to", "go back", "back to", "return back"].contains { lowered.contains($0) }
+        guard isReturn else { return nil }
+        let progress = GoalBreakdown.parse(goal)
+        let screen = progress.subGoals.first?.screen ?? .agentMode
+        return navigatePlan(
+            screen: screen,
+            allowedModes: allowedModes,
+            summary: "Return to \(screen.rawValue).",
+            rationale: "The current sub-goal asks to go back to that in-app screen."
+        )
+    }
+
+    private func navigatePlan(
+        screen: InAppScreen,
+        allowedModes: [AutomationMode],
+        summary: String,
+        rationale: String
+    ) -> AgentPlan {
+        let action: AgentAction
+        if allowedModes.contains(.appIntents), let intent = InAppDeepLink.intentName(for: screen) {
+            action = .invokeAppIntent(intent)
+        } else if let controlId = InAppDeepLink.controlId(for: screen) {
+            action = .tap(controlId: controlId)
+        } else {
+            action = .openURL(InAppDeepLink.url(for: screen).absoluteString)
+        }
+        return AgentPlan(
+            summary: summary,
+            steps: [
+                AgentStep(
+                    action: action,
+                    rationale: rationale,
+                    target: InAppDeepLink.controlId(for: screen) ?? screen.rawValue,
+                    expectedResult: screen.rawValue,
+                    verification: .appContextContains(screen.rawValue)
+                )
+            ]
+        )
+    }
+
+    private func undriveableExternalPlan(for goal: String, allowedModes: [AutomationMode]) -> AgentPlan {
+        let reason = GoalBreakdown.cannotDriveReason(
+            for: AgentSubGoal(index: 0, text: goal, kind: .externalApp)
+        )
+        if allowedModes.contains(where: { [.macAssisted, .webDriverAgent, .jailbreak].contains($0) }) {
+            return externalHandoffPlan(allowedModes: allowedModes)
+        }
+        return AgentPlan(
+            summary: "This sub-goal needs another app.",
+            steps: [
+                AgentStep(
+                    action: .askUser(reason),
+                    rationale: reason,
+                    target: "user",
+                    expectedResult: reason
+                )
+            ],
+            requiresUserApproval: false,
+            risk: .low
+        )
     }
 
     private func deepLinkPlan(for observation: AgentObservation) -> AgentPlan? {

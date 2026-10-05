@@ -22,6 +22,8 @@ public struct AgentPromptCompiler: Sendable {
         Goal:
         \(observation.userGoal)
 
+        This may be one remaining sub-goal of a larger user request. Plan only this next unfinished sub-goal. The runtime will observe and verify, then plan the next sub-goal. Do not treat one verified action as finishing the whole original request.
+
         Observation source: \(observation.source.rawValue)
         Allowed automation modes: \(modeText)
         App context: \(observation.appContext ?? "None")
@@ -54,6 +56,8 @@ public struct AgentPromptCompiler: Sendable {
 
         Verification kinds: none, url_contains, visible_text_contains, control_exists, app_context_contains, state_predicate.
         Prefer one next action. After that action the runtime will observe and verify before planning again.
+        Use answer only when the user asked to reply/say a specific phrase; the answer text must be exactly that phrase.
+        Never mark a third-party app task (Apple Notes, Instagram, Safari, and similar) complete by echoing the goal. If iOS cannot drive that app from inside Str8ZeRO and there is no live Mac/WDA observation, ask the user or hand off instead of inventing success.
 
         Action encodings:
         - Answer: { "answer": { "_0": "text" } }
