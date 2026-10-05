@@ -166,7 +166,7 @@ TestFlight upload:
 3. When it succeeds, the IPA is stored as the `PrivateAgent-v1.0.0-ipa` artifact. CI runs a local IPA preflight and `xcrun altool --validate-app` before upload.
 4. In App Store Connect, open the app → TestFlight. Processing can take several minutes after the job finishes (`skip_waiting_for_build_processing` is on).
 
-The home-screen name is **Str8ZeRO** (`CFBundleDisplayName` / `CFBundleName`). The Xcode target and scheme stay `PrivateAgentApp`, and the bundle id stays `com.jaytrujillo.privateagent` (repository variable `IOS_BUNDLE_ID`).
+The home-screen name is **Str8ZeRO** (`CFBundleDisplayName` / `CFBundleName`). The Xcode target and scheme stay `PrivateAgentApp`, and the bundle id stays `com.jaytrujillo.privateagent` (repository variable `IOS_BUNDLE_ID`). `PRODUCT_NAME` on the app target is **Str8ZeRO** because Xcode’s `GENERATE_INFOPLIST_FILE` writes `CFBundleName` from `PRODUCT_NAME`; the v1.0.2 IPA still shipped `CFBundleName=PrivateAgent` after Info.plist and `INFOPLIST_KEY_CFBundleName` overrides. Folder names stay `Apps/PrivateAgentiOS`.
 
 The checked-in App Icon is the Str8ZeRO wordmark on black (`Design/Str8ZeRO_AppIcon_1024.png`, opaque RGB, no alpha). All catalog sizes (1024 / 180 / 167 / 152 / 120) are generated from that master with `python3 Scripts/generate-app-icon.py --from-png Design/Str8ZeRO_AppIcon_1024.png` and live under `Apps/PrivateAgentiOS/Assets.xcassets/AppIcon.appiconset/`.
 

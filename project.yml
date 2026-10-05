@@ -38,7 +38,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.privateagent.ios
-        PRODUCT_NAME: PrivateAgent
+        # Xcode GENERATE_INFOPLIST_FILE writes CFBundleName from PRODUCT_NAME.
+        # v1.0.2 IPA still had CFBundleName=PrivateAgent even with
+        # INFOPLIST_KEY_CFBundleName / Info.plist set to Str8ZeRO. Target and
+        # scheme stay PrivateAgentApp; only the product name changes.
+        PRODUCT_NAME: Str8ZeRO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleIconName: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: "Str8ZeRO"

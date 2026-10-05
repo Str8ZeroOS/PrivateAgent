@@ -23,6 +23,11 @@ if [[ ! -d PrivateAgent.xcodeproj ]]; then
   exit 1
 fi
 
+if ! grep -q 'PRODUCT_NAME = Str8ZeRO' PrivateAgent.xcodeproj/project.pbxproj; then
+  echo "::error::Generated project is missing PRODUCT_NAME = Str8ZeRO (CFBundleName follows PRODUCT_NAME)."
+  exit 1
+fi
+
 echo "::group::xcodebuild -list"
 xcodebuild -list -project PrivateAgent.xcodeproj
 echo "::endgroup::"

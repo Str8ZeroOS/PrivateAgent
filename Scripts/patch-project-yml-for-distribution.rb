@@ -55,6 +55,7 @@ File.write(
     DEVELOPMENT_TEAM = #{team}
     PROVISIONING_PROFILE_SPECIFIER = #{profile}
     PRODUCT_BUNDLE_IDENTIFIER = #{bundle}
+    PRODUCT_NAME = Str8ZeRO
     CURRENT_PROJECT_VERSION = #{build}
     MARKETING_VERSION = #{marketing}
   XCCONFIG
@@ -75,6 +76,7 @@ app["configFiles"] = { "Release" => "Configs/ci-app-release.xcconfig" }
 app["settings"] ||= {}
 app["settings"]["base"] ||= {}
 app["settings"]["base"]["PRODUCT_BUNDLE_IDENTIFIER"] = bundle
+app["settings"]["base"]["PRODUCT_NAME"] = "Str8ZeRO"
 app["settings"]["base"]["CURRENT_PROJECT_VERSION"] = build
 app["settings"]["base"]["MARKETING_VERSION"] = marketing
 app["settings"]["configs"] ||= {}
@@ -84,6 +86,7 @@ app["settings"]["configs"]["Release"] = {
   "DEVELOPMENT_TEAM" => team,
   "PROVISIONING_PROFILE_SPECIFIER" => profile,
   "PRODUCT_BUNDLE_IDENTIFIER" => bundle,
+  "PRODUCT_NAME" => "Str8ZeRO",
   "CURRENT_PROJECT_VERSION" => build,
   "MARKETING_VERSION" => marketing
 }
