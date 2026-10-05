@@ -8,7 +8,7 @@ import UIKit
 
 public struct OpenModelManagerIntent: AppIntent {
     public static let title: LocalizedStringResource = "Open Model Manager"
-    public static let description = IntentDescription("Open the PrivateAgent on-device model manager.")
+    public static let description = IntentDescription("Open the Str8ZeRO on-device model manager.")
 
     public init() {}
 
@@ -20,7 +20,7 @@ public struct OpenModelManagerIntent: AppIntent {
 
 public struct OpenSettingsIntent: AppIntent {
     public static let title: LocalizedStringResource = "Open Settings"
-    public static let description = IntentDescription("Open PrivateAgent settings.")
+    public static let description = IntentDescription("Open Str8ZeRO settings.")
 
     public init() {}
 
@@ -32,7 +32,7 @@ public struct OpenSettingsIntent: AppIntent {
 
 public struct StartChatIntent: AppIntent {
     public static let title: LocalizedStringResource = "Start Chat"
-    public static let description = IntentDescription("Start a new PrivateAgent chat.")
+    public static let description = IntentDescription("Start a new Str8ZeRO chat.")
 
     public init() {}
 
@@ -44,7 +44,7 @@ public struct StartChatIntent: AppIntent {
 
 public struct OpenAgentModeIntent: AppIntent {
     public static let title: LocalizedStringResource = "Open Agent Mode"
-    public static let description = IntentDescription("Open PrivateAgent Agent Mode.")
+    public static let description = IntentDescription("Open Str8ZeRO Agent Mode.")
 
     public init() {}
 
@@ -56,7 +56,7 @@ public struct OpenAgentModeIntent: AppIntent {
 
 public struct OpenURLIntent: AppIntent {
     public static let title: LocalizedStringResource = "Open URL"
-    public static let description = IntentDescription("Open a URL through PrivateAgent, including first-party privateagent:// deep links.")
+    public static let description = IntentDescription("Open a URL through Str8ZeRO, including first-party privateagent:// deep links.")
 
     @Parameter(title: "URL")
     public var url: URL

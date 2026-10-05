@@ -37,6 +37,8 @@ need() {
 }
 
 need CFBundleIconName
+need CFBundleDisplayName
+need CFBundleName
 need UILaunchScreen
 need ITSAppUsesNonExemptEncryption
 need "UISupportedInterfaceOrientations:0"
@@ -45,6 +47,13 @@ need "UISupportedInterfaceOrientations~ipad:3"
 icon_name="$("$pb" -c 'Print CFBundleIconName' "$plist")"
 if [[ "$icon_name" != "AppIcon" ]]; then
   echo "::error::preflight-ipa: CFBundleIconName is '${icon_name}', expected AppIcon"
+  exit 1
+fi
+
+display_name="$("$pb" -c 'Print CFBundleDisplayName' "$plist")"
+bundle_name="$("$pb" -c 'Print CFBundleName' "$plist")"
+if [[ "$display_name" != "Str8ZeRO" || "$bundle_name" != "Str8ZeRO" ]]; then
+  echo "::error::preflight-ipa: app name is '${display_name}' / '${bundle_name}', expected Str8ZeRO"
   exit 1
 fi
 

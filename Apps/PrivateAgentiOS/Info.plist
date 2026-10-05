@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>Str8ZeRO</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<key>CFBundleName</key>
+	<string>Str8ZeRO</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -23,7 +27,7 @@
 		<string>shortcuts</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>PrivateAgent Agent Mode can connect to an optional Mac helper or WebDriverAgent on your local network.</string>
+	<string>Str8ZeRO Agent Mode can connect to an optional Mac helper or WebDriverAgent on your local network.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

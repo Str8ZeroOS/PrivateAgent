@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate PrivateAgent App Store icons (opaque RGB PNG, no alpha).
+"""Generate Str8ZeRO App Store icons (opaque RGB PNG, no alpha).
 
-Default: dark placeholder with a bold PA monogram.
+Default: dark placeholder with a bold S0 monogram.
 Replace later: python3 Scripts/generate-app-icon.py --from-png path/to/1024.png
 """
 
@@ -89,7 +89,7 @@ def make_placeholder(size: int = 1024) -> Image.Image:
         fill=(20, 48, 64),
     )
     font = load_font(int(size * 0.38))
-    text = "PA"
+    text = "S0"
     bbox = draw.textbbox((0, 0), text, font=font)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]

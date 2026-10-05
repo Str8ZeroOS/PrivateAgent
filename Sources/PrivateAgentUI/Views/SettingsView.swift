@@ -71,6 +71,7 @@ struct SettingsView: View {
                 Text("When on, your messages are sent to NVIDIA's servers. Turn it off to stay fully offline.")
             }
             Section("About") {
+                LabeledContent("App", value: "Str8ZeRO")
                 LabeledContent("Version", value: "0.1.0")
                 Link("GitHub", destination: URL(string: "https://github.com")!)
             }
