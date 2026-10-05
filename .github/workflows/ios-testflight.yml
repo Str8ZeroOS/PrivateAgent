@@ -46,7 +46,11 @@ jobs:
 
       - name: Generate Xcode project
         run: |
-          xcodegen generate
+          set -euo pipefail
+          if ! xcodegen generate; then
+            echo "::error::xcodegen failed to parse project.yml. A Plist/info block needs an explicit path, and every source path must exist. See project.yml and Apps/PrivateAgentiOS/Info.plist."
+            exit 1
+          fi
           test -d PrivateAgent.xcodeproj
           xcodebuild -list -project PrivateAgent.xcodeproj | tee xcode-list.log
 
