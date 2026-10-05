@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AgentCore
 
@@ -10,7 +11,7 @@ struct BridgePairingTests {
         #expect(pairing?.host == "192.168.1.20")
         #expect(pairing?.port == 8765)
         #expect(pairing?.token == "secret-token")
-        #expect(pairing?.recommendedModes().contains(.macAssisted) == true)
+        #expect(pairing?.recommendedModes().contains(AutomationMode.macAssisted) == true)
         #expect(pairing?.pairingURL?.absoluteString.contains("privateagent://pair") == true)
     }
 
