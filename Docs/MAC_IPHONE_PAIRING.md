@@ -1,40 +1,51 @@
 # Mac + iPhone pairing
 
-USB or iPhone Mirroring on the MacBook is local to that Mac. A Cursor Cloud Agent is a separate Linux VM. It cannot see the cable, the mirrored window, or a Mac helper that is only listening on the LAN.
+The MacBook is on the LAN at `192.168.12.110`, with SSH on port `2222`.
 
-This was probed from the Cloud Agent: no self-hosted Cursor worker was registered, and `http://127.0.0.1:8765` / the documented LAN helper were not reachable.
+A Cursor Cloud Agent is a separate Linux VM. From this VM:
 
-## Automatic next step on the MacBook
+- ping `192.168.12.110` loses every packet
+- `ssh -p 2222 192.168.12.110` times out
+- no SSH keys or username are present in the agent environment
 
-On the MacBook Pro that already has the iPhone connected:
+USB / iPhone Mirroring still only exist on that Mac. This VM cannot open the SSH hop from the public internet.
+
+## From a machine that *can* reach the LAN
 
 ```bash
+ssh -p 2222 USER@192.168.12.110
+cd ~/PrivateAgent   # or the real clone path
 ./Scripts/start-mac-bridge.sh
 ```
 
-That script:
-
-1. writes `~/.privateagent/bridge.env` (host, port, token) if needed
-2. opens iPhone Mirroring
-3. starts `Bridge/mac_bridge_helper.py` with `--enable-iphone-mirroring --enable-ax-observation --enable-accessibility-actions`
-4. prints a `privateagent://pair?host=...&port=...&token=...` link
-
-Open that link on the iPhone (or paste it into Safari). Agent Mode stores the pairing, enables Mac-assisted mode, and uses the live Mac/WDA observer.
-
-Probe from the Mac:
+Or, if this repo is already on the Mac at `~/PrivateAgent`:
 
 ```bash
-python3 Scripts/probe-mac-bridge.py
+./Scripts/ssh-start-mac-bridge.sh USER
+```
+
+`start-mac-bridge.sh` writes `~/.privateagent/bridge.env`, opens iPhone Mirroring, starts the helper on `0.0.0.0:8765`, and prints:
+
+```text
+privateagent://pair?host=192.168.12.110&port=8765&token=...
+```
+
+Open that link on the iPhone. Agent Mode now defaults the Mac host to `192.168.12.110`.
+
+Probe from a LAN machine:
+
+```bash
+python3 Scripts/probe-mac-bridge.py --host 192.168.12.110 --token <token>
 ```
 
 If `observation.source` is `iphoneMirroring`, the mirrored window is frontmost.
-
-## If this Cloud Agent should drive the Mac
-
-Start a Cursor self-hosted worker on the MacBook (`cursor worker start`) while the helper is running. Until that worker is registered, this Linux VM cannot tap the phone.
 
 ## Grant on the Mac
 
 - System Settings → Privacy & Security → Accessibility: allow Terminal or Python
 - Keep iPhone Mirroring frontmost while Agent Mode runs a goal
-- Same Wi-Fi (or reachable LAN IP) between iPhone and Mac helper
+- The iPhone must be able to reach `192.168.12.110:8765`
+
+## Username
+
+`ssh -p2222 @192.168.12.110` is missing the account name. The scripts take it as the first argument or `PRIVATEAGENT_SSH_USER`.

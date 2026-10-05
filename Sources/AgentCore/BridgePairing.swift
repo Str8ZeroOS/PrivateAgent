@@ -1,5 +1,11 @@
 import Foundation
 
+public enum PrivateAgentLAN {
+    public static let macHost = "192.168.12.110"
+    public static let sshPort = 2222
+    public static let bridgePort = 8765
+}
+
 public struct BridgePairing: Sendable, Codable, Equatable {
     public var host: String
     public var port: Int
@@ -12,7 +18,7 @@ public struct BridgePairing: Sendable, Codable, Equatable {
 
     public init(
         host: String,
-        port: Int = 8765,
+        port: Int = PrivateAgentLAN.bridgePort,
         token: String,
         wdaHost: String = "127.0.0.1",
         wdaPort: Int = 8101,
@@ -57,7 +63,7 @@ public struct BridgePairing: Sendable, Codable, Equatable {
         guard let host = value("host"), !host.isEmpty, let token = value("token"), !token.isEmpty else {
             return nil
         }
-        let port = Int(value("port") ?? "") ?? 8765
+        let port = Int(value("port") ?? "") ?? PrivateAgentLAN.bridgePort
         return BridgePairing(host: host, port: port, token: token)
     }
 
@@ -66,7 +72,7 @@ public struct BridgePairing: Sendable, Codable, Equatable {
               let token = environment["PRIVATEAGENT_BRIDGE_TOKEN"], !token.isEmpty else {
             return nil
         }
-        let port = Int(environment["PRIVATEAGENT_BRIDGE_PORT"] ?? "") ?? 8765
+        let port = Int(environment["PRIVATEAGENT_BRIDGE_PORT"] ?? "") ?? PrivateAgentLAN.bridgePort
         let wdaHost = environment["PRIVATEAGENT_WDA_HOST"] ?? "127.0.0.1"
         let wdaPort = Int(environment["PRIVATEAGENT_WDA_PORT"] ?? "") ?? 8101
         let wdaToken = environment["PRIVATEAGENT_WDA_TOKEN"] ?? ""
@@ -135,7 +141,7 @@ public enum BridgePairingStore {
               let token = defaults.string(forKey: tokenKey), !token.isEmpty else {
             return nil
         }
-        let port = Int(defaults.string(forKey: portKey) ?? "") ?? 8765
+        let port = Int(defaults.string(forKey: portKey) ?? "") ?? PrivateAgentLAN.bridgePort
         return BridgePairing(
             host: host,
             port: port,
@@ -188,7 +194,7 @@ public enum BridgePairingDoctor {
                 onDarwin: onDarwin,
                 selfHostedWorkerAvailable: false,
                 recommendedModes: modes,
-                nextAction: "This Cloud Agent cannot see the iPhone. On the MacBook, run Scripts/start-mac-bridge.sh while iPhone Mirroring is open, then open the printed privateagent://pair link on the phone.",
+                nextAction: "This Cloud Agent cannot reach \(PrivateAgentLAN.macHost):\(PrivateAgentLAN.sshPort). From a machine on that LAN: ssh -p \(PrivateAgentLAN.sshPort) USER@\(PrivateAgentLAN.macHost) then ./Scripts/start-mac-bridge.sh, and open the printed privateagent://pair link on the iPhone.",
                 canDriveIPhoneFromThisProcess: false
             )
         }

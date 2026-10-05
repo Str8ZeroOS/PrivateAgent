@@ -4,6 +4,13 @@ import Testing
 
 @Suite("Mac/iPhone pairing")
 struct BridgePairingTests {
+    @Test("LAN defaults match the MacBook SSH hop")
+    func lanDefaultsMatchSSHHop() {
+        #expect(PrivateAgentLAN.macHost == "192.168.12.110")
+        #expect(PrivateAgentLAN.sshPort == 2222)
+        #expect(PrivateAgentLAN.bridgePort == 8765)
+    }
+
     @Test("parses a privateagent pair deep link and recommends Mac-assisted mode")
     func parsesPairDeepLink() {
         let url = URL(string: "privateagent://pair?host=192.168.1.20&port=8765&token=secret-token")!
@@ -26,7 +33,7 @@ struct BridgePairingTests {
         #expect(pairing?.host == "10.0.0.4")
         #expect(pairing?.port == 9000)
         #expect(pairing?.enableWebDriverAgent == true)
-        #expect(pairing?.recommendedModes().contains(.webDriverAgent) == true)
+        #expect(pairing?.recommendedModes().contains(AutomationMode.webDriverAgent) == true)
     }
 
     @Test("persists pairing through the store")
@@ -49,6 +56,8 @@ struct BridgePairingTests {
             selfHostedWorkerAvailable: false
         )
         #expect(!diagnosis.canDriveIPhoneFromThisProcess)
+        #expect(diagnosis.nextAction.contains("192.168.12.110"))
+        #expect(diagnosis.nextAction.contains("2222"))
         #expect(diagnosis.nextAction.contains("start-mac-bridge.sh"))
     }
 

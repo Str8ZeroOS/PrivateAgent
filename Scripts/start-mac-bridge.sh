@@ -7,10 +7,12 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This script has to run on the MacBook Pro that is mirroring the iPhone."
   echo "This Cloud Agent is a Linux VM and cannot see USB or iPhone Mirroring."
   echo
-  echo "On the MacBook:"
-  echo "  1. Keep the iPhone connected and iPhone Mirroring open"
-  echo "  2. ./Scripts/start-mac-bridge.sh"
-  echo "  3. Open the printed privateagent://pair link on the iPhone"
+  echo "On a machine that can reach the MacBook LAN:"
+  echo "  ssh -p 2222 USER@192.168.12.110"
+  echo "  ./Scripts/start-mac-bridge.sh"
+  echo "  Then open the printed privateagent://pair link on the iPhone"
+  echo
+  echo "Or: ./Scripts/ssh-start-mac-bridge.sh USER"
   exit 1
 fi
 
@@ -26,7 +28,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     HOST="$(ipconfig getifaddr en1 2>/dev/null || true)"
   fi
   if [[ -z "${HOST}" ]]; then
-    HOST="127.0.0.1"
+    HOST="192.168.12.110"
   fi
   cat > "${ENV_FILE}" <<EOF
 PRIVATEAGENT_BRIDGE_HOST=${HOST}

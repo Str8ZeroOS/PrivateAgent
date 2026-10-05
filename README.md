@@ -70,9 +70,10 @@ Deploy to your iPhone, download a model from the in-app model manager, and start
 
 ## Mac + iPhone Agent Mode
 
-A Cloud Agent Linux VM cannot see a USB-connected iPhone. On the MacBook that is mirroring the phone:
+The MacBook helper is `192.168.12.110` with SSH on port `2222`. A Cloud Agent Linux VM cannot open that LAN hop. From a machine that can:
 
 ```bash
+ssh -p 2222 USER@192.168.12.110
 ./Scripts/start-mac-bridge.sh
 ```
 

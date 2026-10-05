@@ -47,7 +47,7 @@ def request_json(url: str, token: str, method: str = "GET", body: dict | None = 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe PrivateAgent Mac bridge health")
-    parser.add_argument("--host", default=os.environ.get("PRIVATEAGENT_BRIDGE_HOST", ""))
+    parser.add_argument("--host", default=os.environ.get("PRIVATEAGENT_BRIDGE_HOST", "192.168.12.110"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("PRIVATEAGENT_BRIDGE_PORT", "8765")))
     parser.add_argument("--token", default=os.environ.get("PRIVATEAGENT_BRIDGE_TOKEN", ""))
     parser.add_argument("--env-file", default=os.path.expanduser("~/.privateagent/bridge.env"))

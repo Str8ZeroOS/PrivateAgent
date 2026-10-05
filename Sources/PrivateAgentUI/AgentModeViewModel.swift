@@ -24,8 +24,8 @@ public enum AgentPlanningMode: String, CaseIterable, Identifiable, Sendable {
 public final class AgentModeViewModel {
     public var goal: String = ""
     public var planningMode: AgentPlanningMode = .ruleBased
-    public var bridgeHost: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgeHost") ?? ""
-    public var bridgePort: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgePort") ?? "8765"
+    public var bridgeHost: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgeHost") ?? PrivateAgentLAN.macHost
+    public var bridgePort: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgePort") ?? String(PrivateAgentLAN.bridgePort)
     public var bridgeToken: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgeToken") ?? ""
     public var wdaHost: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaHost") ?? "127.0.0.1"
     public var wdaPort: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaPort") ?? "8101"
