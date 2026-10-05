@@ -14,7 +14,7 @@ swift test -v
 
 Use this when a local workstation has TLS, Git, certificate, or platform limitations. The CI result is the authoritative compile/test signal.
 
-For a full iOS app compile without secrets, use **Actions → iOS TestFlight → Unsigned iOS simulator build**. To ship to a phone from Windows, set the secrets in `Docs/TESTFLIGHT_SETUP.md` and run the TestFlight job. A Mac OS X 10.12.6 machine cannot run Swift 6 / modern Xcode; GitHub-hosted macOS runners do that instead.
+For a full iOS app compile without secrets, use **Actions → iOS TestFlight → Unsigned iOS simulator build**. To ship to a phone from Windows, set the secrets in `Docs/TESTFLIGHT_SETUP.md` and push a version tag (`git tag v1.0.0 && git push origin v1.0.0`). A Mac OS X 10.12.6 machine cannot run Swift 6 / modern Xcode; GitHub-hosted macOS runners do that instead.
 
 ### If API-created commits do not trigger Actions
 

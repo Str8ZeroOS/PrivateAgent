@@ -1,64 +1,134 @@
+# PrivateAgent iOS compile + TestFlight release.
+#
+# Triggers
+#   push / pull_request  → simulator-build only (no secrets)
+#   push tag vMAJOR.MINOR.PATCH → simulator-build, then testflight-release
+#   workflow_dispatch    → same release path for an existing tag (not a branch)
+#
+# Versioning
+#   MARKETING_VERSION = tag without the leading v (v1.2.3 → 1.2.3)
+#   BUILD_NUMBER      = MAJOR*1000000 + MINOR*1000 + PATCH  (v1.2.3 → 1002003)
+#   The same tag always produces the same CFBundleVersion. To ship a new binary,
+#   push a new tag. Manual dispatch re-runs that same encoded number.
+#
+# Pins
+#   Runner: macos-15
+#   Xcode:  26.3  (not latest-stable)
 name: iOS TestFlight
 
 on:
   push:
+    branches:
+      - "**"
     tags:
-      - "*"        # TestFlight runs only on tags
+      - "v*.*.*"
   pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to re-release (vMAJOR.MINOR.PATCH). The selected branch only supplies this workflow file; the app is built from the tag.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-testflight-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('release-{0}', inputs.tag) || (startsWith(github.ref, 'refs/tags/') && format('release-{0}', github.ref_name) || format('ci-{0}', github.ref)) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   IOS_BUNDLE_ID_DEFAULT: com.privateagent.ios
-  MARKETING_VERSION: "0.1.0"
+  XCODE_VERSION: "26.3"
 
 jobs:
-  simulator:
-    name: Unsigned iOS simulator build
-    runs-on: macos-15
-    timeout-minutes: 75
-
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      is_release: ${{ steps.version.outputs.is_release }}
+      tag: ${{ steps.version.outputs.tag }}
+      marketing_version: ${{ steps.version.outputs.marketing_version }}
+      build_number: ${{ steps.version.outputs.build_number }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Select latest stable Xcode
+      - name: Derive marketing version and build number
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: bash Scripts/resolve-ios-release-version.sh --ci
+
+      - name: Confirm dispatch tag exists
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "::group::Verify refs/tags/${TAG}"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} does not exist on origin. Create it with: git tag ${TAG} && git push origin ${TAG}"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+  simulator-build:
+    name: Unsigned iOS simulator build
+    needs: resolve-version
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Select pinned Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Print toolchain versions
         run: |
-          xcodebuild -version | tee xcode-version.log
-          swift --version | tee swift-version.log
-          python3 Scripts/check-cross-platform-swift.py | tee cross-platform-preflight.log
+          set -euo pipefail
+          echo "::group::xcodebuild -version"
+          xcodebuild -version
+          echo "::endgroup::"
+          echo "::group::swift --version"
+          swift --version
+          echo "::endgroup::"
+          echo "::group::Cross-platform Swift preflight"
+          python3 Scripts/check-cross-platform-swift.py
+          echo "::endgroup::"
 
       - name: Install XcodeGen
         run: |
+          set -euo pipefail
           if ! command -v xcodegen >/dev/null; then
             brew install xcodegen
           fi
           xcodegen --version
 
       - name: Generate Xcode project
-        run: |
-          set -euo pipefail
-          if ! xcodegen generate; then
-            echo "::error::xcodegen failed to parse project.yml. A Plist/info block needs an explicit path, and every source path must exist."
-            exit 1
-          fi
-          test -d PrivateAgent.xcodeproj
-          xcodebuild -list -project PrivateAgent.xcodeproj | tee xcode-list.log
+        run: bash Scripts/generate-xcode-project.sh
 
       - name: Build for iOS Simulator (unsigned)
+        env:
+          MARKETING_VERSION: ${{ needs.resolve-version.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ needs.resolve-version.outputs.build_number }}
         run: |
           set -euo pipefail
+          echo "::group::xcodebuild (iOS Simulator, unsigned)"
           xcodebuild \
             -project PrivateAgent.xcodeproj \
             -scheme PrivateAgentApp \
@@ -68,45 +138,51 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=- \
-            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            MARKETING_VERSION="${{ env.MARKETING_VERSION }}" \
+            CURRENT_PROJECT_VERSION="${BUILD_NUMBER}" \
+            MARKETING_VERSION="${MARKETING_VERSION}" \
             build | tee ios-simulator-build.log
+          echo "::endgroup::"
 
       - name: Upload simulator logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-failure-logs
-          path: |
-            xcode-version.log
-            swift-version.log
-            cross-platform-preflight.log
-            xcode-list.log
-            ios-simulator-build.log
+          path: ios-simulator-build.log
           if-no-files-found: ignore
 
-  testflight:
+  testflight-release:
     name: Sign and upload to TestFlight
+    needs: [resolve-version, simulator-build]
+    if: needs.resolve-version.outputs.is_release == 'true'
     runs-on: macos-15
     timeout-minutes: 90
-    needs: simulator
-    if: startsWith(github.ref, 'refs/tags/')   # Only run on tags
-
+    env:
+      MARKETING_VERSION: ${{ needs.resolve-version.outputs.marketing_version }}
+      BUILD_NUMBER: ${{ needs.resolve-version.outputs.build_number }}
+      RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
     steps:
-      - name: Check out repository
+      - name: Check out release tag
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ needs.resolve-version.outputs.tag }}
 
-      - name: Select latest stable Xcode
+      - name: Select pinned Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Resolve bundle id
-        run: echo "IOS_BUNDLE_ID=${IOS_BUNDLE_ID:-$IOS_BUNDLE_ID_DEFAULT}" >> "$GITHUB_ENV"
+        run: |
+          set -euo pipefail
+          bundle_id="${IOS_BUNDLE_ID_VAR:-$IOS_BUNDLE_ID_DEFAULT}"
+          echo "IOS_BUNDLE_ID=${bundle_id}" >> "$GITHUB_ENV"
+          echo "Using bundle id ${bundle_id} for ${RELEASE_TAG} (${MARKETING_VERSION} / ${BUILD_NUMBER})"
         env:
-          IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+          IOS_BUNDLE_ID_VAR: ${{ vars.IOS_BUNDLE_ID }}
 
-      - name: Require TestFlight secrets
+      - name: Preflight TestFlight secrets
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
@@ -119,10 +195,13 @@ jobs:
 
       - name: Install XcodeGen and fastlane
         run: |
+          set -euo pipefail
           if ! command -v xcodegen >/dev/null; then
             brew install xcodegen
           fi
           gem install fastlane --no-document
+          xcodegen --version
+          fastlane --version
 
       - name: Import distribution certificate and profile
         env:
@@ -130,80 +209,22 @@ jobs:
           IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-        run: |
-          set -euo pipefail
-          echo "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
-          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/appstore.mobileprovision"
-
-          KCP="$RUNNER_TEMP/testflight.keychain-db"
-          KCPW="$(uuidgen)"
-          echo "KEYCHAIN_PATH=$KCP" >> "$GITHUB_ENV"
-          echo "KEYCHAIN_PASSWORD=$KCPW" >> "$GITHUB_ENV"
-
-          security create-keychain -p "$KCPW" "$KCP"
-          security set-keychain-settings -lut 21600 "$KCP"
-          security unlock-keychain -p "$KCPW" "$KCP"
-          security import "$RUNNER_TEMP/dist.p12" -P "$IOS_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KCP" \
-            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/xcodebuild
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" "$KCP"
-          security list-keychains -d user -s "$KCP"
-          security find-identity -v -p codesigning "$KCP"
-
-          if ! security find-identity -v -p codesigning "$KCP" | grep -q "Apple Distribution"; then
-            echo "::error::The imported .p12 does not contain an Apple Distribution identity."
-            exit 1
-          fi
-
-          security cms -D -i "$RUNNER_TEMP/appstore.mobileprovision" > "$RUNNER_TEMP/profile.plist"
-          PB=/usr/libexec/PlistBuddy
-          UUID="$($PB -c 'Print UUID' "$RUNNER_TEMP/profile.plist")"
-          NAME="$($PB -c 'Print Name' "$RUNNER_TEMP/profile.plist")"
-          TEAM="$($PB -c 'Print TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")"
-          APPID="$($PB -c 'Print Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")"
-          PROFILE_BUNDLE="${APPID#*.}"
-
-          if [[ "$TEAM" != "$APPLE_TEAM_ID" ]]; then
-            echo "::error::APPLE_TEAM_ID ($APPLE_TEAM_ID) does not match the provisioning profile team ($TEAM)."
-            exit 1
-          fi
-          if [[ "$PROFILE_BUNDLE" != "$IOS_BUNDLE_ID" ]]; then
-            echo "::error::Bundle id $IOS_BUNDLE_ID does not match the provisioning profile ($PROFILE_BUNDLE)."
-            exit 1
-          fi
-
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$RUNNER_TEMP/appstore.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
-          echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
-          echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+        run: bash Scripts/import-ios-distribution-signing.sh
 
       - name: Generate signed Xcode project
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          ruby -ryaml -e '
-            d = YAML.load_file("project.yml")
-            t = d.fetch("targets").fetch("PrivateAgentApp")
-            t["settings"] ||= {}
-            t["settings"]["base"] ||= {}
-            t["settings"]["base"].merge!({
-              "CODE_SIGN_STYLE" => "Manual",
-              "CODE_SIGN_IDENTITY" => "Apple Distribution",
-              "DEVELOPMENT_TEAM" => ENV.fetch("APPLE_TEAM_ID"),
-              "PROVISIONING_PROFILE_SPECIFIER" => ENV.fetch("PROFILE_NAME"),
-              "PRODUCT_BUNDLE_IDENTIFIER" => ENV.fetch("IOS_BUNDLE_ID"),
-              "CURRENT_PROJECT_VERSION" => ENV.fetch("GITHUB_RUN_NUMBER"),
-              "MARKETING_VERSION" => ENV.fetch("MARKETING_VERSION")
-            })
-            File.write("project.yml", d.to_yaml)
-          '
-          xcodegen generate
+          ruby Scripts/patch-project-yml-for-distribution.rb
+          bash Scripts/generate-xcode-project.sh
 
       - name: Archive App Store IPA
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
+          echo "::group::xcodebuild archive"
           xcodebuild archive \
             -project PrivateAgent.xcodeproj \
             -scheme PrivateAgentApp \
@@ -216,69 +237,63 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
-            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            MARKETING_VERSION="${{ env.MARKETING_VERSION }}" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
             | tee ios-archive.log
+          echo "::endgroup::"
 
-          python3 - <<'PY'
-          import os, plistlib
-          p = {
-              "method": "app-store-connect",
-              "destination": "export",
-              "teamID": os.environ["APPLE_TEAM_ID"],
-              "signingStyle": "manual",
-              "signingCertificate": "Apple Distribution",
-              "provisioningProfiles": {
-                  os.environ["IOS_BUNDLE_ID"]: os.environ["PROFILE_NAME"]
-              },
-              "uploadSymbols": True,
-              "compileBitcode": False,
-          }
-          with open(os.path.join(os.environ["RUNNER_TEMP"], "ExportOptions.plist"), "wb") as fh:
-              plistlib.dump(p, fh)
-          PY
+          python3 Scripts/write-export-options.py
 
+          echo "::group::xcodebuild -exportArchive"
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/PrivateAgent.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -exportPath "$RUNNER_TEMP/export" \
             | tee ios-export.log
+          echo "::endgroup::"
 
-          IPA=$(find "$RUNNER_TEMP/export" -name '*.ipa' | head -1)
-          if [[ -z "$IPA" ]]; then
-            echo "::error::xcodebuild -exportArchive did not produce an IPA."
+          ipa="$(find "$RUNNER_TEMP/export" -name '*.ipa' -print -quit)"
+          if [[ -z "$ipa" ]]; then
+            echo "::error::xcodebuild -exportArchive did not produce an IPA. Check the signing profile and Apple Distribution identity."
             exit 1
           fi
-
-          echo "IPA_PATH=$IPA" >> "$GITHUB_ENV"
+          echo "IPA_PATH=${ipa}" >> "$GITHUB_ENV"
           mkdir -p out
-          cp "$IPA" out/PrivateAgent-testflight.ipa
+          cp "$ipa" "out/PrivateAgent-${RELEASE_TAG}.ipa"
+          echo "Exported ${ipa} as out/PrivateAgent-${RELEASE_TAG}.ipa"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PrivateAgent-testflight-ipa
-          path: out/PrivateAgent-testflight.ipa
+          name: PrivateAgent-${{ needs.resolve-version.outputs.tag }}-ipa
+          path: out/PrivateAgent-${{ needs.resolve-version.outputs.tag }}.ipa
+
+      - name: Decode App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$key_path"
+          if [[ ! -s "$key_path" ]]; then
+            echo "::error::ASC_KEY_P8_BASE64 did not decode to a non-empty .p8. Re-encode AuthKey_XXXX.p8 as documented in Docs/TESTFLIGHT_SETUP.md."
+            exit 1
+          fi
+          echo "ASC_KEY_PATH=${key_path}" >> "$GITHUB_ENV"
 
       - name: Upload to TestFlight
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           FASTLANE_OPT_OUT_USAGE: "YES"
           FASTLANE_SKIP_UPDATE_CHECK: "YES"
-          TESTFLIGHT_CHANGELOG: "GitHub Actions ${{ github.run_number }} (${{ github.sha }})"
+          TESTFLIGHT_CHANGELOG: "${{ needs.resolve-version.outputs.tag }} (${{ github.sha }})"
         run: |
           set -euo pipefail
+          echo "::group::fastlane ios upload_testflight"
           fastlane ios upload_testflight | tee ios-testflight-upload.log
-
-      - name: Cleanup keychain
-        if: always()
-        run: |
-          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
-            security delete-keychain "$KEYCHAIN_PATH" || true
-          fi
+          echo "::endgroup::"
 
       - name: Upload TestFlight logs
         if: failure()
@@ -290,3 +305,19 @@ jobs:
             ios-export.log
             ios-testflight-upload.log
           if-no-files-found: ignore
+
+      - name: Cleanup signing material
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+          rm -f "$RUNNER_TEMP/dist.p12" \
+                "$RUNNER_TEMP/appstore.mobileprovision" \
+                "$RUNNER_TEMP/profile.plist" \
+                "$RUNNER_TEMP/AuthKey.p8" \
+                "$RUNNER_TEMP/ExportOptions.plist"
+          if [[ -n "${PROFILE_UUID:-}" ]]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
+          fi

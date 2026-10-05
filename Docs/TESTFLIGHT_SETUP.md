@@ -1,13 +1,57 @@
 # TestFlight setup from Windows (no Mac)
 
-PrivateAgent is built in GitHub Actions on a hosted macOS runner with a current Xcode that supports Swift 6. A Mac OS X 10.12.6 machine cannot run that toolchain or iPhone Mirroring. You do **not** need a modern Mac to ship a TestFlight build.
+PrivateAgent is built in GitHub Actions on a **pinned** hosted macOS runner (`macos-15`, Xcode **26.3**) that supports Swift 6. A Mac OS X 10.12.6 machine cannot run that toolchain or iPhone Mirroring. You do **not** need a modern Mac to ship a TestFlight build.
 
 The workflow is `.github/workflows/ios-testflight.yml`.
 
-- **Unsigned iOS simulator build** runs on every push and pull request. No secrets. This is the compile check.
-- **Sign and upload to TestFlight** runs only on **Actions → iOS TestFlight → Run workflow**. It uses **manual signing** (your Distribution `.p12` + App Store provisioning profile) plus an App Store Connect API key. That is more predictable on a GitHub-hosted runner than Xcode automatic signing (`-allowProvisioningUpdates`), which still needs a certificate in the keychain and can change profiles during the job.
+| Job | When it runs | Secrets |
+| --- | --- | --- |
+| **Resolve version** | Every run | None |
+| **Unsigned iOS simulator build** | Every push and pull request, and before a release | None |
+| **Sign and upload to TestFlight** | Only for a version tag `vMAJOR.MINOR.PATCH` (or a manual re-run of that tag) | Required |
 
-Build number is `github.run_number`. Version string is `0.1.0` (`MARKETING_VERSION` in the workflow and `project.yml`).
+Signing is **manual** (your Distribution `.p12` + App Store provisioning profile) plus an App Store Connect API key. That is more predictable on a GitHub-hosted runner than Xcode automatic signing (`-allowProvisioningUpdates`). `fastlane match` is not used.
+
+## Release flow
+
+Ship a build by pushing a **version tag**. From Windows (Git Bash, PowerShell, or GitHub Desktop):
+
+```powershell
+git checkout main
+git pull origin main
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+That push starts **iOS TestFlight**. After the unsigned simulator job passes, the signed job archives, signs, and uploads the IPA.
+
+### Tag format
+
+- Required: `vMAJOR.MINOR.PATCH` — examples: `v1.0.0`, `v1.2.3`, `v2.0.0`
+- Rejected: `v1.2`, `1.2.3`, `v1.2.3-beta`, `release-1.0.0`, a branch name
+
+The workflow strips the leading `v` and fails with a named error if the tag is not strict semver.
+
+### Versioning scheme
+
+| Field | Source | Example for `v1.2.3` |
+| --- | --- | --- |
+| Marketing version (`CFBundleShortVersionString`) | Tag without `v` | `1.2.3` |
+| Build number (`CFBundleVersion`) | `MAJOR * 1000000 + MINOR * 1000 + PATCH` | `1002003` |
+
+The build number is **deterministic** (the same tag always encodes the same number) and **monotonically increasing** as you bump MAJOR / MINOR / PATCH. Limits: major ≤ 2000, minor ≤ 999, patch ≤ 999.
+
+Because one tag maps to one build number, a tag cannot upload two different binaries. To ship a new binary, push a new tag (`v1.0.1`, not a second `v1.0.0`).
+
+Unsigned CI compiles on branches use marketing version `0.0.0` and `github.run_number` as the build number (not uploaded).
+
+### Optional manual re-run
+
+**Actions → iOS TestFlight → Run workflow** is a fallback that re-runs **an existing tag**. You must type the tag (`v1.2.3`) in the `tag` input. The branch picker only selects which workflow file to use; the app is checked out from the tag. This does **not** release an arbitrary branch.
+
+Re-dispatching a tag that already landed on TestFlight will fail at upload (duplicate `CFBundleVersion`). Use it after a failed release of that same tag.
+
+Concurrency group `release-vX.Y.Z` allows only one in-flight upload per tag (`cancel-in-progress` is off for tags).
 
 ## Secrets and variables
 
@@ -31,7 +75,7 @@ Add these under the GitHub repo: **Settings → Secrets and variables → Action
 | --- | --- | --- |
 | `IOS_BUNDLE_ID` | `com.privateagent.ios` | Must match the App ID, the provisioning profile, and App Store Connect. |
 
-The job fails with a named list of missing secrets if you dispatch TestFlight before these are set.
+The signed job fails with a named list of missing secrets if you push a version tag before these are set. Secrets are injected only into the steps that need them and are never echoed.
 
 ## 1. App ID and App Store Connect record
 
@@ -108,17 +152,18 @@ Keep `privateagent-distribution.key` and the `.p12` private. The password you ch
 
 Do not commit these files. Do not put the raw password or `.p8` in the repo.
 
-## 6. Run the workflows
+## 6. Watch the workflows
 
 Compile check (no secrets):
 
-1. Push to this repository, or open **Actions → iOS TestFlight** and confirm the **Unsigned iOS simulator build** job on the latest run.
+1. Push a branch or open a pull request.
+2. Open **Actions → iOS TestFlight** and confirm **Unsigned iOS simulator build**.
 
 TestFlight upload:
 
 1. Confirm every required secret is set.
-2. **Actions → iOS TestFlight → Run workflow** on `main` or this branch.
-3. When it succeeds, the IPA is also stored as the `PrivateAgent-testflight-ipa` artifact.
+2. `git tag v1.0.0 && git push origin v1.0.0`
+3. When it succeeds, the IPA is stored as the `PrivateAgent-v1.0.0-ipa` artifact.
 4. In App Store Connect, open the app → TestFlight. Processing can take several minutes after the job finishes (`skip_waiting_for_build_processing` is on).
 
 The Sierra MacBook is not used for this path. Do not install Xcode 6-era tools or iPhone Mirroring on it.
@@ -130,7 +175,7 @@ The Sierra MacBook is not used for this path. Do not install Xcode 6-era tools o
 | Manual: Distribution `.p12` + App Store profile | Yes | Deterministic. The runner never logs into Xcode with an Apple ID. The profile you uploaded is the profile that signs the IPA. |
 | Automatic: `-allowProvisioningUpdates` + ASC API key | No | Still needs a cert in the keychain. On a disposable runner it can create or rewrite profiles and fail in ways that are hard to replay from Windows. |
 
-`fastlane match` is not used.
+`fastlane match` is not used. The App Store Connect `.p8` is decoded to a temp file and passed to fastlane as `key_filepath` (not as env base64).
 
 ## If the simulator job fails
 

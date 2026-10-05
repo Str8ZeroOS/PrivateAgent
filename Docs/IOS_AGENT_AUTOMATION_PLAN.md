@@ -100,7 +100,7 @@ Capability fallback order when a primary executor is unavailable:
 - `CapabilityRuntime` wires Agent Mode: if Mac-assisted or WebDriverAgent is allowed and a client is configured, the loop observes and acts through that adapter, then falls back to the in-app store.
 - Agent Mode includes Mac bridge and WebDriverAgent connection fields plus health/status checks.
 - Automatic Mac/iPhone pairing: `Scripts/start-mac-bridge.sh` writes a local token, opens iPhone Mirroring, and prints a `privateagent://pair` deep link that Agent Mode applies.
-- Cloud TestFlight path (no modern Mac required): `.github/workflows/ios-testflight.yml` builds the iOS app on a GitHub-hosted macOS runner. Setup from Windows: `Docs/TESTFLIGHT_SETUP.md`.
+- Cloud TestFlight path (no modern Mac required): `.github/workflows/ios-testflight.yml` compiles on every push and releases on `vMAJOR.MINOR.PATCH` tags. Setup from Windows: `Docs/TESTFLIGHT_SETUP.md`.
 - WebDriverAgent adapter process: `Bridge/wda_adapter.py`.
 - Opt-in Mac AX observation and AX click in `Bridge/mac_bridge_helper.py`.
 - AgentCore is Foundation-only. UIKit stays behind `#if canImport(UIKit)` in `PrivateAgentUI`.
@@ -122,7 +122,7 @@ When a goal needs those capabilities, the planner must hand off to an allowed ex
 ## Remaining work that needs Xcode / a device
 
 1. Full `swift build` / `swift test` of FlashMoE, Metal, and `PrivateAgentUI` on macOS (Linux only builds AgentCore). The unsigned simulator job in `.github/workflows/ios-testflight.yml` is the iOS compile signal.
-2. Create App Store Connect records and GitHub secrets (`Docs/TESTFLIGHT_SETUP.md`), then dispatch **iOS TestFlight** to sign and upload a build. A Mac OS X 10.12.6 machine cannot run modern Xcode; do not use it for this path.
+2. Create App Store Connect records and GitHub secrets (`Docs/TESTFLIGHT_SETUP.md`), then push `vMAJOR.MINOR.PATCH` to sign and upload a build. A Mac OS X 10.12.6 machine cannot run modern Xcode; do not use it for this path.
 3. On-device Agent Mode plus Siri/Shortcuts phrase checks for the new App Intents, using the TestFlight build.
 4. Run the Mac helper with `--enable-ax-observation` and `--enable-accessibility-actions` on a paired Mac that has Accessibility permission, then enable Mac-assisted mode in Agent Mode.
 5. Run `Bridge/wda_adapter.py` against a real WebDriverAgent session on a developer device, then enable WebDriverAgent mode in Agent Mode.

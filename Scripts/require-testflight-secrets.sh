@@ -26,13 +26,15 @@ fi
 
 echo "::error::Missing GitHub secrets: ${missing[*]}"
 echo
-echo "This job signs an App Store IPA and uploads it to TestFlight."
-echo "Add the secrets in the GitHub repo: Settings → Secrets and variables → Actions."
-echo "Step-by-step (Windows, no Mac): Docs/TESTFLIGHT_SETUP.md"
+echo "Signed TestFlight upload needs App Store signing material."
+echo "Add the secrets at: Settings → Secrets and variables → Actions."
+echo "Windows / no-Mac steps: Docs/TESTFLIGHT_SETUP.md"
 echo
 echo "Required secrets:"
 printf '  - %s\n' "${required[@]}"
 echo
 echo "Optional repository variable:"
 echo "  - IOS_BUNDLE_ID (defaults to com.privateagent.ios)"
+echo
+echo "Then ship with: git tag v1.0.0 && git push origin v1.0.0"
 exit 1
