@@ -10,6 +10,7 @@ struct BridgePairingTests {
         #expect(PrivateAgentLAN.sshUser == "jay")
         #expect(PrivateAgentLAN.sshPort == 2222)
         #expect(PrivateAgentLAN.bridgePort == 8765)
+        #expect(PrivateAgentLAN.sshHostFingerprint == "SHA256:emqKZwPshfgeWHiI35S8DIbs3PiMU5ZIo/4PZJCz67Q")
     }
 
     @Test("parses a privateagent pair deep link and recommends Mac-assisted mode")

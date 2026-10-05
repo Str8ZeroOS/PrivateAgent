@@ -5,6 +5,7 @@ public enum PrivateAgentLAN {
     public static let sshUser = "jay"
     public static let sshPort = 2222
     public static let bridgePort = 8765
+    public static let sshHostFingerprint = "SHA256:emqKZwPshfgeWHiI35S8DIbs3PiMU5ZIo/4PZJCz67Q"
 }
 
 public struct BridgePairing: Sendable, Codable, Equatable {

@@ -16,6 +16,7 @@ if [[ -z "${SSH_USER}" ]]; then
 fi
 
 echo "Connecting to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} ..."
+echo "Expected host key: ED25519 SHA256:emqKZwPshfgeWHiI35S8DIbs3PiMU5ZIo/4PZJCz67Q"
 exec ssh -p "${SSH_PORT}" \
   -o ConnectTimeout=8 \
   -o BatchMode=yes \

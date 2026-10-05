@@ -67,10 +67,18 @@ If `observation.source` is `iphoneMirroring`, the mirrored window is frontmost.
 
 ## Username
 
-The Mac account is `jay`. From a LAN machine:
+The Mac account is `jay`. Expected host key:
+
+```text
+ED25519 SHA256:emqKZwPshfgeWHiI35S8DIbs3PiMU5ZIo/4PZJCz67Q
+```
+
+That fingerprint only verifies the Mac. It is not a private key and cannot log this Cloud Agent in.
+
+From a LAN machine:
 
 ```bash
 ssh -p 2222 jay@192.168.12.110
 ```
 
-This Cloud Agent still cannot open that private hop.
+This Cloud Agent still cannot open that private hop (TCP 2222 times out; no `id_ed25519` is installed here).
