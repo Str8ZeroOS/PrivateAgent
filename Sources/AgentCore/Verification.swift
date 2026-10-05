@@ -288,70 +288,29 @@ public struct GoalVerifier: GoalVerifying {
         observation: AgentObservation,
         history: [StepRunRecord]
     ) -> GoalVerificationResult {
-        guard let last = history.last else {
+        guard !history.isEmpty else {
             return GoalVerificationResult(isSatisfied: false, message: "No actions have been taken yet.")
         }
 
-        switch last.step.action {
-        case .answer:
-            if last.execution.status == .completed {
-                return GoalVerificationResult(isSatisfied: true, message: "Goal completed with an in-app answer.")
+        let progress = GoalBreakdown.evaluating(goal: goal, history: history, observation: observation)
+        if progress.allVerified {
+            if let answer = progress.finalAnswer, !answer.isEmpty {
+                return GoalVerificationResult(
+                    isSatisfied: true,
+                    message: "All \(progress.subGoals.count) sub-goal(s) verified. Final answer: \(answer)"
+                )
             }
-        case .askUser:
-            if last.execution.status == .completed {
-                return GoalVerificationResult(isSatisfied: true, message: "Goal paused after asking the user for missing information.")
-            }
-        case .handoff:
-            if last.execution.status == .completed {
-                if isExternalObservationSource(observation.source) {
-                    return GoalVerificationResult(
-                        isSatisfied: false,
-                        message: "Handoff was accepted; continue against the live Mac/WDA observation."
-                    )
-                }
-                return GoalVerificationResult(isSatisfied: true, message: "iOS-side work finished by handing off to an allowed external mode.")
-            }
-        case .invokeAppIntent:
-            if last.execution.status == .completed {
-                return GoalVerificationResult(isSatisfied: true, message: "First-party App Intent completed inside PrivateAgent.")
-            }
-        case .openURL(let url):
-            if InAppDeepLink.screen(from: url) != nil, last.verification?.verified == true || last.execution.status == .completed {
-                return GoalVerificationResult(isSatisfied: true, message: "First-party PrivateAgent deep link completed.")
-            }
-            if last.verification?.verified == true, !needsFollowUpAfterOpeningURL(goal) {
-                return GoalVerificationResult(isSatisfied: true, message: "Opened the requested URL.")
-            }
-        case .tap, .type, .scroll:
-            if last.verification?.verified == true {
-                return GoalVerificationResult(isSatisfied: true, message: "Observed result matches the requested control action.")
-            }
-        default:
-            break
+            return GoalVerificationResult(
+                isSatisfied: true,
+                message: "All \(progress.subGoals.count) sub-goal(s) verified."
+            )
         }
 
-        if last.verification?.verified == true, history.count == 1, !isExternalObservationSource(observation.source) {
-            return GoalVerificationResult(isSatisfied: true, message: "Single-step plan was ACTION_VERIFIED.")
-        }
-
-        _ = observation
-        return GoalVerificationResult(isSatisfied: false, message: "Goal is not yet verified against the latest observation.")
-    }
-
-    private func isExternalObservationSource(_ source: ObservationSource) -> Bool {
-        switch source {
-        case .macBridge, .iphoneMirroring, .webDriverAgent, .jailbreakBridge:
-            return true
-        case .privateAgentApp, .appIntent, .shortcuts, .userProvided:
-            return false
-        }
-    }
-
-    private func needsFollowUpAfterOpeningURL(_ goal: String) -> Bool {
-        let lowered = goal.lowercased()
-        if InAppDeepLink.screen(inGoal: goal) != nil {
-            return false
-        }
-        return ["tap", "click", "scroll", "swipe", "type", "enter "].contains { lowered.contains($0) }
+        let verified = progress.verifiedCount
+        let remaining = progress.nextPending?.text ?? "remaining work"
+        return GoalVerificationResult(
+            isSatisfied: false,
+            message: "Verified \(verified)/\(progress.subGoals.count) sub-goals. Next: \(remaining)"
+        )
     }
 }

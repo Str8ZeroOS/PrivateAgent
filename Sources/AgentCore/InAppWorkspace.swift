@@ -222,12 +222,16 @@ public enum InAppWorkspace {
         case .models:
             return [
                 AgentControl(id: "models.download", label: "Download", role: .button),
-                AgentControl(id: "nav.chats", label: "Chats", role: .button)
+                AgentControl(id: "nav.chats", label: "Chats", role: .button),
+                AgentControl(id: "nav.agentMode", label: "Agent Mode", role: .button),
+                AgentControl(id: "nav.back", label: "Back", role: .button)
             ]
         case .settings:
             return [
                 AgentControl(id: "settings.cloudToggle", label: "Use NVIDIA cloud", role: .toggle),
-                AgentControl(id: "nav.chats", label: "Chats", role: .button)
+                AgentControl(id: "nav.chats", label: "Chats", role: .button),
+                AgentControl(id: "nav.agentMode", label: "Agent Mode", role: .button),
+                AgentControl(id: "nav.back", label: "Back", role: .button)
             ]
         case .agentMode:
             return [

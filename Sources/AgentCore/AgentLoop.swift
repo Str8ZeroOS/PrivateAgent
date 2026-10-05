@@ -50,6 +50,7 @@ public struct AgentLoopSnapshot: Sendable, Codable, Equatable {
     public var lastRecovery: RecoveryDecision?
     public var outcomeMessage: String?
     public var plannerDiagnostics: AgentPlannerDiagnostics?
+    public var goalProgress: AgentGoalProgress?
 
     public init(
         phase: AgentPhase = .idle,
@@ -62,7 +63,8 @@ public struct AgentLoopSnapshot: Sendable, Codable, Equatable {
         stepRecords: [StepRunRecord] = [],
         lastRecovery: RecoveryDecision? = nil,
         outcomeMessage: String? = nil,
-        plannerDiagnostics: AgentPlannerDiagnostics? = nil
+        plannerDiagnostics: AgentPlannerDiagnostics? = nil,
+        goalProgress: AgentGoalProgress? = nil
     ) {
         self.phase = phase
         self.goal = goal
@@ -75,6 +77,7 @@ public struct AgentLoopSnapshot: Sendable, Codable, Equatable {
         self.lastRecovery = lastRecovery
         self.outcomeMessage = outcomeMessage
         self.plannerDiagnostics = plannerDiagnostics
+        self.goalProgress = goalProgress
     }
 }
 
@@ -157,6 +160,12 @@ public actor AgentLoop {
             }
 
             var observation = try await observe(goal: trimmed, lastAction: nil, lastResult: nil)
+            refreshGoalProgress(goal: trimmed, observation: observation)
+            if let blocked = undriveablePendingSubGoal(observation: observation) {
+                markSubGoalBlocked(blocked, reason: GoalBreakdown.cannotDriveReason(for: blocked))
+                try await finish(.blocked, message: GoalBreakdown.cannotDriveReason(for: blocked))
+                return snapshot
+            }
             var recoveryCount = 0
             var retryCount = 0
             var pendingFallback: AgentAction?
@@ -167,9 +176,20 @@ public actor AgentLoop {
                     return snapshot
                 }
 
+                refreshGoalProgress(goal: trimmed, observation: observation)
+                if let blocked = undriveablePendingSubGoal(observation: observation) {
+                    markSubGoalBlocked(blocked, reason: GoalBreakdown.cannotDriveReason(for: blocked))
+                    try await finish(.blocked, message: GoalBreakdown.cannotDriveReason(for: blocked))
+                    return snapshot
+                }
+
                 snapshot.agentStepCount = stepIndex
                 try await transition(to: .planning)
-                let plan = try await configuration.planner.makePlan(for: observation, allowedModes: configuration.allowedModes)
+                var planningObservation = observation
+                if let remaining = snapshot.goalProgress?.nextPending {
+                    planningObservation.userGoal = remaining.text
+                }
+                let plan = try await configuration.planner.makePlan(for: planningObservation, allowedModes: configuration.allowedModes)
                 snapshot.plan = plan
                 await emit(.planUpdated(plan))
 
@@ -274,6 +294,15 @@ public actor AgentLoop {
                     usedFallback: action != step.action
                 )
                 snapshot.stepRecords.append(record)
+                refreshGoalProgress(goal: trimmed, observation: observation)
+
+                if case .askUser(let question) = action,
+                   snapshot.goalProgress?.nextPending?.kind == .externalApp
+                    || GoalBreakdown.isUndriveableExternalApp(planningObservation.userGoal) {
+                    markSubGoalBlocked(snapshot.goalProgress?.nextPending, reason: question)
+                    try await finish(.blocked, message: question)
+                    return snapshot
+                }
 
                 let goalResult = configuration.goalVerifier.verify(
                     goal: trimmed,
@@ -339,6 +368,33 @@ public actor AgentLoop {
             snapshot.phase = .failed
             snapshot.outcomeMessage = error.localizedDescription
             return snapshot
+        }
+    }
+
+    private func refreshGoalProgress(goal: String, observation: AgentObservation) {
+        snapshot.goalProgress = GoalBreakdown.evaluating(
+            goal: goal,
+            history: snapshot.stepRecords,
+            observation: observation
+        )
+    }
+
+    private func undriveablePendingSubGoal(observation: AgentObservation) -> AgentSubGoal? {
+        guard let next = snapshot.goalProgress?.nextPending, next.kind == .externalApp else {
+            return nil
+        }
+        if GoalBreakdown.isLiveExternalObservation(observation.source) {
+            return nil
+        }
+        return next
+    }
+
+    private func markSubGoalBlocked(_ subGoal: AgentSubGoal?, reason: String) {
+        guard var progress = snapshot.goalProgress, let subGoal else { return }
+        if let index = progress.subGoals.firstIndex(where: { $0.id == subGoal.id }) {
+            progress.subGoals[index].status = .blocked
+            progress.subGoals[index].detail = reason
+            snapshot.goalProgress = progress
         }
     }
 
