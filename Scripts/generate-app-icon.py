@@ -2,7 +2,7 @@
 """Generate Str8ZeRO App Store icons (opaque RGB PNG, no alpha).
 
 Default: dark placeholder with a bold S0 monogram.
-Replace later: python3 Scripts/generate-app-icon.py --from-png path/to/1024.png
+Checked-in art: python3 Scripts/generate-app-icon.py --from-png Design/Str8ZeRO_AppIcon_1024.png
 """
 
 from __future__ import annotations

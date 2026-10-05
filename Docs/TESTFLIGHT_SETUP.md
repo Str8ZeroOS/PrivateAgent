@@ -168,7 +168,7 @@ TestFlight upload:
 
 The home-screen name is **Str8ZeRO** (`CFBundleDisplayName` / `CFBundleName`). The Xcode target and scheme stay `PrivateAgentApp`, and the bundle id stays `com.jaytrujillo.privateagent` (repository variable `IOS_BUNDLE_ID`).
 
-The checked-in App Icon is a placeholder (dark background, **S0** monogram, no transparency). To use your own art, drop an opaque 1024×1024 PNG in and run `python3 Scripts/generate-app-icon.py --from-png your-icon.png`, then commit the files under `Apps/PrivateAgentiOS/Assets.xcassets/AppIcon.appiconset/`.
+The checked-in App Icon is the Str8ZeRO wordmark on black (`Design/Str8ZeRO_AppIcon_1024.png`, opaque RGB, no alpha). All catalog sizes (1024 / 180 / 167 / 152 / 120) are generated from that master with `python3 Scripts/generate-app-icon.py --from-png Design/Str8ZeRO_AppIcon_1024.png` and live under `Apps/PrivateAgentiOS/Assets.xcassets/AppIcon.appiconset/`.
 
 The Sierra MacBook is not used for this path. Do not install Xcode 6-era tools or iPhone Mirroring on it.
 
