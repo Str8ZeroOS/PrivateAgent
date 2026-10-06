@@ -2,6 +2,20 @@ import Foundation
 import Observation
 import AgentCore
 
+/// A pairing code that arrived via a `privateagent://pair?...&code=` link and
+/// is waiting for Agent Mode to send it to the bridge.
+public struct PendingBridgePairing: Sendable, Equatable {
+    public var host: String
+    public var port: Int
+    public var code: String
+
+    public init(host: String, port: Int, code: String) {
+        self.host = host
+        self.port = port
+        self.code = code
+    }
+}
+
 @MainActor
 @Observable
 public final class AppRouter {
@@ -12,6 +26,7 @@ public final class AppRouter {
     public var isSettingsPresented = false
     public var startChatRequested = false
     public var lastPairingHost: String?
+    public var pendingBridgePairing: PendingBridgePairing?
 
     public init() {}
 
@@ -39,11 +54,24 @@ public final class AppRouter {
     }
 
     public func open(url: URL) {
-        if let pairing = BridgePairing.fromDeepLink(url) {
+        switch BridgePairingLink.parse(url) {
+        case .code(let host, let port, let code):
+            // Only host/port are persisted here; the one-time code is handed to
+            // Agent Mode, which exchanges it for a Keychain-stored token.
+            UserDefaults.standard.set(host, forKey: BridgePairingStore.hostKey)
+            UserDefaults.standard.set(String(port), forKey: BridgePairingStore.portKey)
+            pendingBridgePairing = PendingBridgePairing(host: host, port: port, code: code)
+            lastPairingHost = host
+            open(.agentMode)
+            return
+        case .token(let pairing):
+            // Legacy link from an older bridge script; the token goes to the Keychain.
             BridgePairingStore.save(pairing)
             lastPairingHost = pairing.host
             open(.agentMode)
             return
+        case nil:
+            break
         }
         guard let screen = InAppDeepLink.screen(from: url) else { return }
         open(screen)

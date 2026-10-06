@@ -115,39 +115,101 @@ public struct AgentModeView: View {
                 }
             }
 
-            Section("Mac Bridge") {
-                TextField("Host", text: $viewModel.bridgeHost)
+            Section {
+                TextField("Host (PC/Mac IP)", text: $viewModel.bridgeHost)
+                    .autocorrectionDisabled()
                 TextField("Port", text: $viewModel.bridgePort)
-                SecureField("Token", text: $viewModel.bridgeToken)
 
-                Button("Check Bridge") {
+                if let status = viewModel.bridgeConnection {
+                    BridgeStatusRow(
+                        title: status.title,
+                        detail: status.detail,
+                        hint: status.hint,
+                        tone: tone(for: status.state)
+                    )
+                }
+
+                if viewModel.bridgeConnection?.needsPairingCode == true || !viewModel.pairingCode.isEmpty {
+                    TextField("6-digit pairing code", text: $viewModel.pairingCode)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .keyboardType(.numberPad) // cross-platform-check: allow
+                        #endif
+                    Button("Pair") {
+                        Task { await viewModel.pairBridge() }
+                    }
+                    .disabled(viewModel.isCheckingBridge || BridgeConnectionManager.normalizePairingCode(viewModel.pairingCode) == nil)
+                }
+
+                Button {
                     Task { await viewModel.checkBridgeHealth() }
+                } label: {
+                    HStack {
+                        Text("Check Bridge")
+                        if viewModel.isCheckingBridge {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
                 }
+                .disabled(viewModel.isCheckingBridge)
 
-                if let bridgeStatus = viewModel.bridgeStatus {
-                    Text(bridgeStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if viewModel.bridgeConnection?.redactedToken != nil {
+                    Button("Forget Pairing", role: .destructive) {
+                        Task { await viewModel.forgetBridgePairing() }
+                    }
+                    .disabled(viewModel.isCheckingBridge)
                 }
+            } header: {
+                Text("Mac Bridge")
+            } footer: {
+                Text("Run python Bridge/mac_bridge_helper.py on your PC or Mac. It shows a 6-digit pairing code; Check Bridge asks for it once and keeps the token in the Keychain.")
             }
 
-            Section("WebDriverAgent") {
+            Section {
                 Text("Developer-device only. Not App Store safe.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 TextField("Host", text: $viewModel.wdaHost)
+                    .autocorrectionDisabled()
                 TextField("Port", text: $viewModel.wdaPort)
-                SecureField("Token", text: $viewModel.wdaToken)
 
-                Button("Check WDA") {
+                if let status = viewModel.wdaConnection {
+                    BridgeStatusRow(
+                        title: status.title,
+                        detail: status.detail,
+                        hint: status.hint,
+                        tone: tone(for: status.state)
+                    )
+                    if let sessionId = status.sessionId {
+                        LabeledContent("Session", value: sessionId.count > 12 ? String(sessionId.prefix(12)) + "…" : sessionId)
+                            .font(.caption)
+                    }
+                }
+
+                Button {
                     Task { await viewModel.checkWDAStatus() }
+                } label: {
+                    HStack {
+                        Text("Check WDA")
+                        if viewModel.isCheckingWDA {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
                 }
+                .disabled(viewModel.isCheckingWDA)
 
-                if let wdaStatus = viewModel.wdaStatus {
-                    Text(wdaStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if viewModel.wdaConnection?.kind == .direct, viewModel.wdaConnection?.sessionId != nil {
+                    Button("New WDA Session") {
+                        Task { await viewModel.resetWDASession() }
+                    }
+                    .disabled(viewModel.isCheckingWDA)
                 }
+            } header: {
+                Text("WebDriverAgent")
+            } footer: {
+                Text("WebDriverAgentRunner on this iPhone listens on 127.0.0.1:8100. The Str8ZeRO adapter (Bridge/wda_adapter.py) on a computer uses port 8101. No token needed; the session is created automatically.")
             }
 
             Section("Allowed Modes") {
@@ -246,6 +308,10 @@ public struct AgentModeView: View {
         )
         .onAppear {
             viewModel.reloadPairing()
+            consumePendingPairing()
+        }
+        .onChange(of: AppRouter.shared.pendingBridgePairing) { _, _ in
+            consumePendingPairing()
         }
         .toolbar {
             ToolbarItem {
@@ -283,6 +349,30 @@ public struct AgentModeView: View {
             }
         } message: {
             Text(viewModel.pendingApproval?.reason ?? "This plan requires approval because it may use external control, sensitive actions, or a higher-risk automation mode.")
+        }
+    }
+
+    private func consumePendingPairing() {
+        guard let pending = AppRouter.shared.pendingBridgePairing else { return }
+        AppRouter.shared.pendingBridgePairing = nil
+        Task { await viewModel.handlePendingPairing(pending) }
+    }
+
+    private func tone(for state: BridgeConnectionState) -> BridgeStatusRow.Tone {
+        switch state {
+        case .paired: return .good
+        case .reachableUnpaired, .tokenInvalid, .pairingFailed: return .warning
+        case .unreachable, .error: return .bad
+        case .notConfigured: return .neutral
+        }
+    }
+
+    private func tone(for state: WDAConnectionState) -> BridgeStatusRow.Tone {
+        switch state {
+        case .ready: return .good
+        case .notReady, .unauthorized: return .warning
+        case .unreachable, .sessionFailed, .error: return .bad
+        case .notConfigured: return .neutral
         }
     }
 
@@ -368,6 +458,53 @@ public struct AgentModeView: View {
             return "Wait: \(seconds)s"
         case .handoff(let handoff):
             return "Handoff: \(handoff.target.rawValue)"
+        }
+    }
+}
+
+/// Live connection status: colored title, reason, and a short hint.
+struct BridgeStatusRow: View {
+    enum Tone {
+        case good, warning, bad, neutral
+    }
+
+    let title: String
+    let detail: String
+    let hint: String?
+    let tone: Tone
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(color)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let hint, !hint.isEmpty {
+                Text(hint)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch tone {
+        case .good: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .bad: return "xmark.octagon.fill"
+        case .neutral: return "questionmark.circle"
+        }
+    }
+
+    private var color: Color {
+        switch tone {
+        case .good: return .green
+        case .warning: return .orange
+        case .bad: return .red
+        case .neutral: return .secondary
         }
     }
 }

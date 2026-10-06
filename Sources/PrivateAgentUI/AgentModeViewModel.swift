@@ -2,6 +2,9 @@ import Foundation
 import Observation
 import AgentCore
 import FlashMoEBridge
+#if os(iOS)
+import UIKit
+#endif
 
 public enum AgentPlanningMode: String, CaseIterable, Identifiable, Sendable {
     case ruleBased
@@ -24,14 +27,16 @@ public enum AgentPlanningMode: String, CaseIterable, Identifiable, Sendable {
 public final class AgentModeViewModel {
     public var goal: String = ""
     public var planningMode: AgentPlanningMode = .ruleBased
-    public var bridgeHost: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgeHost") ?? PrivateAgentLAN.macHost
-    public var bridgePort: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgePort") ?? String(PrivateAgentLAN.bridgePort)
-    public var bridgeToken: String = UserDefaults.standard.string(forKey: "PrivateAgent.bridgeToken") ?? ""
-    public var wdaHost: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaHost") ?? "127.0.0.1"
-    public var wdaPort: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaPort") ?? "8101"
-    public var wdaToken: String = UserDefaults.standard.string(forKey: "PrivateAgent.wdaToken") ?? ""
-    public private(set) var bridgeStatus: String?
-    public private(set) var wdaStatus: String?
+    public var bridgeHost: String = UserDefaults.standard.string(forKey: BridgePairingStore.hostKey) ?? PrivateAgentLAN.macHost
+    public var bridgePort: String = UserDefaults.standard.string(forKey: BridgePairingStore.portKey) ?? String(PrivateAgentLAN.bridgePort)
+    /// One-time 6-digit code shown in the bridge window. Never persisted.
+    public var pairingCode: String = ""
+    public var wdaHost: String = UserDefaults.standard.string(forKey: BridgePairingStore.wdaHostKey) ?? "127.0.0.1"
+    public var wdaPort: String = UserDefaults.standard.string(forKey: BridgePairingStore.wdaPortKey) ?? "8101"
+    public private(set) var bridgeConnection: BridgeConnectionStatus?
+    public private(set) var wdaConnection: WDAConnectionStatus?
+    public private(set) var isCheckingBridge = false
+    public private(set) var isCheckingWDA = false
     public private(set) var plan: AgentPlan?
     public private(set) var plannerDiagnostics: AgentPlannerDiagnostics?
     public private(set) var executionResults: [ActionExecutionResult] = []
@@ -48,42 +53,60 @@ public final class AgentModeViewModel {
     private let runner: PlanRunner
     private var approvalBroker: AgentApprovalBroker?
     private var runningLoop: AgentLoop?
+    /// Bridge tokens live only here (the Keychain on device), never in UserDefaults.
+    private let secrets: any CredentialStore
+    private let transport: any HTTPTransport
+    private let wdaSessionStore: any CredentialStore
+    @ObservationIgnored private var wdaManager: WebDriverAgentSessionManager?
 
     public init(
         session: AgentSession = AgentSession(),
-        runner: PlanRunner = PlanRunner(executor: SystemActionExecutorFactory.makeDefaultExecutor())
+        runner: PlanRunner = PlanRunner(executor: SystemActionExecutorFactory.makeDefaultExecutor()),
+        secrets: any CredentialStore = CredentialStores.secure(),
+        transport: any HTTPTransport = URLSessionHTTPTransport(),
+        wdaSessionStore: any CredentialStore = UserDefaultsCredentialStore()
     ) {
         self.session = session
         self.runner = runner
+        self.secrets = secrets
+        self.transport = transport
+        self.wdaSessionStore = wdaSessionStore
         reloadPairing()
     }
 
+    /// Short status line for the bridge (kept for callers that want a string).
+    public var bridgeStatus: String? { bridgeConnection?.summary }
+    public var wdaStatus: String? { wdaConnection?.summary }
+
     public func reloadPairing() {
-        guard let pairing = BridgePairingStore.load() else { return }
-        apply(pairing)
+        BridgePairingStore.migrateLegacyTokens(secrets: secrets)
+        let defaults = UserDefaults.standard
+        if let host = defaults.string(forKey: BridgePairingStore.hostKey), !host.isEmpty { bridgeHost = host }
+        if let port = defaults.string(forKey: BridgePairingStore.portKey), !port.isEmpty { bridgePort = port }
+        if let pairing = BridgePairing.fromEnvironment(ProcessInfo.processInfo.environment) {
+            apply(pairing)
+        }
     }
 
+    /// Applies a legacy token pairing (old `privateagent://pair?token=` link or
+    /// environment). The token is written to the Keychain, not UserDefaults.
     public func apply(_ pairing: BridgePairing) {
         bridgeHost = pairing.host
         bridgePort = String(pairing.port)
-        bridgeToken = pairing.token
         wdaHost = pairing.wdaHost
         wdaPort = String(pairing.wdaPort)
-        wdaToken = pairing.wdaToken
         allowedModes = pairing.recommendedModes(startingFrom: allowedModes)
+        BridgePairingStore.save(pairing, secrets: secrets)
         saveBridgeSettings()
-        BridgePairingStore.save(pairing)
-        let diagnosis = BridgePairingDoctor.diagnose(
-            pairing: pairing,
-            onDarwin: {
-                #if os(macOS)
-                return true
-                #else
-                return false
-                #endif
-            }()
-        )
-        bridgeStatus = "Paired \(pairing.host):\(pairing.port). \(diagnosis.nextAction)"
+        bridgeConnection = nil
+    }
+
+    /// Picks up a `privateagent://pair?...&code=` link and runs the handshake.
+    public func handlePendingPairing(_ pending: PendingBridgePairing) async {
+        bridgeHost = pending.host
+        bridgePort = String(pending.port)
+        pairingCode = pending.code
+        await checkBridgeHealth()
     }
 
     public func updateGoal(_ goal: String) {
@@ -91,52 +114,128 @@ public final class AgentModeViewModel {
     }
 
     public func saveBridgeSettings() {
-        UserDefaults.standard.set(bridgeHost, forKey: "PrivateAgent.bridgeHost")
-        UserDefaults.standard.set(bridgePort, forKey: "PrivateAgent.bridgePort")
-        UserDefaults.standard.set(bridgeToken, forKey: "PrivateAgent.bridgeToken")
-        UserDefaults.standard.set(wdaHost, forKey: "PrivateAgent.wdaHost")
-        UserDefaults.standard.set(wdaPort, forKey: "PrivateAgent.wdaPort")
-        UserDefaults.standard.set(wdaToken, forKey: "PrivateAgent.wdaToken")
+        let defaults = UserDefaults.standard
+        defaults.set(bridgeHost.trimmingCharacters(in: .whitespacesAndNewlines), forKey: BridgePairingStore.hostKey)
+        defaults.set(bridgePort.trimmingCharacters(in: .whitespacesAndNewlines), forKey: BridgePairingStore.portKey)
+        defaults.set(wdaHost.trimmingCharacters(in: .whitespacesAndNewlines), forKey: BridgePairingStore.wdaHostKey)
+        defaults.set(wdaPort.trimmingCharacters(in: .whitespacesAndNewlines), forKey: BridgePairingStore.wdaPortKey)
+        // Tokens are never written to UserDefaults; drop any legacy copies.
+        defaults.removeObject(forKey: BridgePairingStore.tokenKey)
+        defaults.removeObject(forKey: BridgePairingStore.wdaTokenKey)
     }
 
+    /// "Check Bridge": probe /health with the Keychain token. If the bridge is
+    /// reachable but unpaired (or the token was rejected) and a pairing code was
+    /// entered, run the /pair handshake and store the issued token.
     public func checkBridgeHealth() async {
         saveBridgeSettings()
-        bridgeStatus = "Checking..."
         errorMessage = nil
-
-        guard let client = makeBridgeClient() else {
-            bridgeStatus = "Enter a valid host and port."
+        guard let manager = makeBridgeManager() else {
+            bridgeConnection = BridgeConnectionStatus(
+                state: .notConfigured,
+                title: "Not configured",
+                detail: "Enter the bridge computer's IP address and a port between 1 and 65535.",
+                hint: "Example: 192.168.12.141 and 8765."
+            )
             return
         }
+        isCheckingBridge = true
+        defer { isCheckingBridge = false }
 
-        do {
-            let health = try await client.health()
-            let mode = health.mode.map { " (\($0))" } ?? ""
-            bridgeStatus = "Connected: \(health.status)\(mode)"
-        } catch {
-            bridgeStatus = "Connection failed: \(error.localizedDescription)"
+        var status = await manager.checkStatus()
+        let code = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        if status.needsPairingCode, !code.isEmpty {
+            status = await manager.pair(code: code, deviceName: Self.deviceName)
         }
+        if status.state == .paired {
+            pairingCode = ""
+            if !allowedModes.contains(.macAssisted) {
+                allowedModes.append(.macAssisted)
+            }
+        }
+        bridgeConnection = status
     }
 
-    public func checkWDAStatus() async {
+    /// Explicit "Pair" button: send the code even before a status check.
+    public func pairBridge() async {
         saveBridgeSettings()
-        wdaStatus = "Checking..."
         errorMessage = nil
-
-        guard let client = makeWDAClient() else {
-            wdaStatus = "Enter a valid WebDriverAgent host and port."
+        guard let manager = makeBridgeManager() else {
+            await checkBridgeHealth()
             return
         }
-
-        do {
-            let status = try await client.status()
-            let session = status.sessionId.map { " session=\($0)" } ?? ""
-            wdaStatus = status.ready
-                ? "Ready: \(status.message)\(session)"
-                : "Not ready: \(status.message)"
-        } catch {
-            wdaStatus = "Connection failed: \(error.localizedDescription)"
+        isCheckingBridge = true
+        defer { isCheckingBridge = false }
+        let status = await manager.pair(code: pairingCode, deviceName: Self.deviceName)
+        if status.state == .paired {
+            pairingCode = ""
+            if !allowedModes.contains(.macAssisted) {
+                allowedModes.append(.macAssisted)
+            }
         }
+        bridgeConnection = status
+    }
+
+    /// Deletes this bridge's token from the Keychain and re-checks.
+    public func forgetBridgePairing() async {
+        makeBridgeManager()?.forgetToken()
+        await checkBridgeHealth()
+    }
+
+    public var hasStoredBridgeToken: Bool {
+        makeBridgeManager()?.storedToken() != nil
+    }
+
+    /// "Check WDA": probe /status, then create or reuse a WebDriver session
+    /// (recreating it if the stored one expired). For 127.0.0.1 it also tries
+    /// the on-device WebDriverAgentRunner port 8100.
+    public func checkWDAStatus() async {
+        saveBridgeSettings()
+        errorMessage = nil
+        let trimmedHost = wdaHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty, let port = Int(wdaPort.trimmingCharacters(in: .whitespacesAndNewlines)), (1...65535).contains(port) else {
+            wdaConnection = WDAConnectionStatus(
+                state: .notConfigured,
+                title: "Not configured",
+                detail: "Enter the WebDriverAgent host and a port between 1 and 65535.",
+                hint: "On-device WebDriverAgentRunner: 127.0.0.1 and 8100.",
+                host: trimmedHost,
+                port: 0
+            )
+            return
+        }
+        isCheckingWDA = true
+        defer { isCheckingWDA = false }
+
+        let (status, manager) = await WebDriverAgentProbe.check(
+            host: trimmedHost,
+            port: port,
+            transport: transport,
+            sessionStore: wdaSessionStore,
+            tokenStore: secrets
+        )
+        wdaManager = manager
+        if status.port != port, status.state != .unreachable {
+            wdaPort = String(status.port)
+            saveBridgeSettings()
+        }
+        wdaConnection = status
+    }
+
+    /// Drops the stored WDA session and creates a fresh one.
+    public func resetWDASession() async {
+        if let manager = currentWDAManager() {
+            await manager.invalidateSession()
+        }
+        await checkWDAStatus()
+    }
+
+    private static var deviceName: String {
+        #if os(iOS)
+        return "Str8ZeRO on \(UIDevice.current.model)"
+        #else
+        return "Str8ZeRO"
+        #endif
     }
 
     public func makePlan(
@@ -307,31 +406,36 @@ public final class AgentModeViewModel {
         executionResults = snapshot.stepRecords.map(\.execution)
     }
 
-    private func makeBridgeClient() -> LocalBridgeClient? {
+    private func makeBridgeManager() -> BridgeConnectionManager? {
         let trimmedHost = bridgeHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPort = bridgePort.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty, let port = Int(trimmedPort), port > 0 else { return nil }
-
-        var components = URLComponents()
-        components.scheme = "http"
-        components.host = trimmedHost
-        components.port = port
-        guard let url = components.url else { return nil }
-
-        return LocalBridgeClient(baseURL: url, token: bridgeToken)
+        guard !trimmedHost.isEmpty, let port = Int(trimmedPort), (1...65535).contains(port) else { return nil }
+        let manager = BridgeConnectionManager(host: trimmedHost, port: port, transport: transport, tokenStore: secrets)
+        return manager.baseURL == nil ? nil : manager
     }
 
-    private func makeWDAClient() -> LocalWebDriverAgentClient? {
+    private func makeBridgeClient() -> LocalBridgeClient? {
+        makeBridgeManager()?.makeClient()
+    }
+
+    private func currentWDAManager() -> WebDriverAgentSessionManager? {
         let trimmedHost = wdaHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPort = wdaPort.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty, let port = Int(trimmedPort), port > 0 else { return nil }
+        guard !trimmedHost.isEmpty, let port = Int(wdaPort.trimmingCharacters(in: .whitespacesAndNewlines)), (1...65535).contains(port) else {
+            return nil
+        }
+        if let wdaManager, wdaManager.host == trimmedHost, wdaManager.port == port {
+            return wdaManager
+        }
+        let manager = WebDriverAgentSessionManager(
+            host: trimmedHost, port: port, transport: transport,
+            sessionStore: wdaSessionStore, tokenStore: secrets
+        )
+        wdaManager = manager
+        return manager
+    }
 
-        var components = URLComponents()
-        components.scheme = "http"
-        components.host = trimmedHost
-        components.port = port
-        guard let url = components.url else { return nil }
-
-        return LocalWebDriverAgentClient(baseURL: url, token: wdaToken)
+    private func makeWDAClient() -> ManagedWebDriverAgentClient? {
+        guard let manager = currentWDAManager() else { return nil }
+        return ManagedWebDriverAgentClient(manager: manager, transport: transport, tokenStore: secrets)
     }
 }

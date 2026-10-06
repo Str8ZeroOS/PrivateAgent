@@ -43,8 +43,9 @@ struct BridgePairingTests {
         let defaults = UserDefaults(suiteName: "PrivateAgent.BridgePairingTests")!
         defaults.removePersistentDomain(forName: "PrivateAgent.BridgePairingTests")
         let pairing = BridgePairing(host: "192.168.0.8", port: 8765, token: "stored")
-        BridgePairingStore.save(pairing, defaults: defaults)
-        let loaded = BridgePairingStore.load(defaults: defaults, environment: [:])
+        let secrets = InMemoryCredentialStore()
+        BridgePairingStore.save(pairing, defaults: defaults, secrets: secrets)
+        let loaded = BridgePairingStore.load(defaults: defaults, secrets: secrets, environment: [:])
         #expect(loaded?.host == "192.168.0.8")
         #expect(loaded?.token == "stored")
         #expect(loaded?.enableMacAssisted == true)

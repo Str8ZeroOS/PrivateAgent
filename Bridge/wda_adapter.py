@@ -4,7 +4,12 @@
 Translates Docs/WEBDRIVERAGENT_PROTOCOL.md into raw WDA/XCTest HTTP calls.
 Not App Store safe. Run only on a machine that already hosts WebDriverAgent.
 
-    python3 Bridge/wda_adapter.py --token dev --wda-url http://127.0.0.1:8100
+    python3 Bridge/wda_adapter.py --host 0.0.0.0 --wda-url http://127.0.0.1:8100
+
+No token is needed: Str8ZeRO's "Check WDA" probes /status and the adapter
+creates or reuses the WebDriverAgent session itself (recreating it if WDA
+reports the session expired). --token is optional and only for older app
+builds that still sent a static WDA token.
 """
 
 from __future__ import annotations
@@ -85,32 +90,76 @@ def observation_from_source(goal: str, source_xml: str, session_id: str | None):
     }
 
 
+def is_invalid_session(status: int, payload) -> bool:
+    value = payload.get("value") if isinstance(payload, dict) else None
+    error = ""
+    if isinstance(value, dict):
+        error = value.get("error") or ""
+    if not error and isinstance(payload, dict):
+        error = payload.get("error") or ""
+    return error == "invalid session id" or (status == 404 and not error)
+
+
 class AdapterState:
     def __init__(self, token: str, wda_url: str):
         self.token = token
         self.wda_url = wda_url.rstrip("/")
         self.session_id = None
 
-    def ensure_session(self):
+    def session_alive(self, session_id: str) -> bool:
+        status, payload = wda_request(self.wda_url, "GET", "/session/%s" % session_id)
+        if status != 200:
+            return False
+        value = payload.get("value") if isinstance(payload, dict) else None
+        return not (isinstance(value, dict) and value.get("error"))
+
+    def ensure_session(self, force_new: bool = False):
+        """Reuse a live WDA session, or create one. Recreates expired sessions."""
         status, payload = wda_request(self.wda_url, "GET", "/status")
-        if status == 200:
-            value = payload.get("value") or payload
-            session = value.get("sessionId") or payload.get("sessionId")
-            if session:
-                self.session_id = session
-                return True, "ok"
+        if status == 0:
+            return False, "WebDriverAgent is not reachable at %s: %s" % (self.wda_url, payload.get("error"))
+        if status != 200:
+            return False, "WebDriverAgent /status returned HTTP %s" % status
+        value = payload.get("value") or {}
+        if isinstance(value, dict) and value.get("ready") is False:
+            return False, value.get("message") or "WebDriverAgent is not ready."
+        if force_new:
+            self.session_id = None
+        if self.session_id and self.session_alive(self.session_id):
+            return True, "session reused"
+        self.session_id = None
+        advertised = payload.get("sessionId") or (value.get("sessionId") if isinstance(value, dict) else None)
+        if advertised and self.session_alive(advertised):
+            self.session_id = advertised
+            return True, "session adopted"
         status, payload = wda_request(
             self.wda_url,
             "POST",
             "/session",
-            {"capabilities": {"alwaysMatch": {"platformName": "iOS"}}},
+            {"capabilities": {"alwaysMatch": {}, "firstMatch": [{}]}},
+            timeout=30.0,
         )
         if status in (200, 201):
             value = payload.get("value") or payload
             self.session_id = value.get("sessionId") or payload.get("sessionId")
             if self.session_id:
                 return True, "session created"
-        return False, payload.get("error") or "WebDriverAgent is not reachable."
+        value = payload.get("value") if isinstance(payload, dict) else None
+        reason = (value or {}).get("message") if isinstance(value, dict) else None
+        return False, reason or payload.get("error") or "WebDriverAgent refused to create a session."
+
+    def session_request(self, method: str, path: str, body=None):
+        """Call /session/<id><path>; recreate the session once if it expired."""
+        ok, message = self.ensure_session()
+        if not ok:
+            return 0, {"error": message}
+        status, payload = wda_request(self.wda_url, method, "/session/%s%s" % (self.session_id, path), body)
+        if is_invalid_session(status, payload):
+            ok, message = self.ensure_session(force_new=True)
+            if not ok:
+                return 0, {"error": message}
+            status, payload = wda_request(self.wda_url, method, "/session/%s%s" % (self.session_id, path), body)
+        return status, payload
 
     def observe(self, goal: str):
         ok, message = self.ensure_session()
@@ -120,7 +169,7 @@ class AdapterState:
                 "message": message,
                 "wdaSessionId": self.session_id,
             }
-        status, payload = wda_request(self.wda_url, "GET", "/source")
+        status, payload = self.session_request("GET", "/source")
         source = ""
         if status == 200:
             value = payload.get("value") or payload
@@ -143,22 +192,20 @@ class AdapterState:
             return "completed", "Waited %.1f seconds." % seconds
         if name == "openURL":
             url = payload.get("_0") or payload.get("url") or payload.get("value")
-            status, body = wda_request(self.wda_url, "POST", "/url", {"url": url})
+            status, body = self.session_request("POST", "/url", {"url": url})
             if status == 200:
                 return "completed", "Opened URL via WDA: %s" % url
             return "failed", body.get("error") or "WDA openURL failed."
         if name in ("tap", "type"):
             control_id = payload.get("controlId") or payload.get("_0")
             label = payload.get("text") if name == "type" else control_id
-            status, body = wda_request(
-                self.wda_url,
+            status, body = self.session_request(
                 "POST",
                 "/element",
                 {"using": "accessibility id", "value": control_id},
             )
             if status != 200:
-                status, body = wda_request(
-                    self.wda_url,
+                status, body = self.session_request(
                     "POST",
                     "/element",
                     {"using": "name", "value": control_id},
@@ -167,13 +214,12 @@ class AdapterState:
             if not element:
                 return "failed", "Control not found: %s" % control_id
             if name == "tap":
-                status, body = wda_request(self.wda_url, "POST", "/element/%s/click" % element, {})
+                status, body = self.session_request("POST", "/element/%s/click" % element, {})
                 return ("completed", "Tapped %s" % control_id) if status == 200 else ("failed", body.get("error") or "click failed")
-            status, body = wda_request(
-                self.wda_url,
+            status, body = self.session_request(
                 "POST",
                 "/element/%s/value" % element,
-                {"value": list(str(label or ""))},
+                {"value": list(str(label or "")), "text": str(label or "")},
             )
             return ("completed", "Typed into %s" % control_id) if status == 200 else ("failed", body.get("error") or "type failed")
         if name == "scroll":

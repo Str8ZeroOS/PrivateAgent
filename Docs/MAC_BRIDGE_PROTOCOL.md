@@ -10,13 +10,49 @@ The default development shape is a local-network HTTP service, for example:
 http://192.168.12.110:8765
 ```
 
-The development helper requires a bearer token on every request:
+Every endpoint except `POST /pair` requires a bearer token:
 
 ```text
-Authorization: Bearer <pairing-token>
+Authorization: Bearer <device-token>
 ```
 
-Production pairing should add stronger device identity, token rotation, local-network trust, and a user-visible approval ledger before enabling privileged actions.
+The iPhone gets that token through a one-time pairing code instead of the user pasting it.
+
+## Pairing
+
+1. `Bridge/mac_bridge_helper.py` prints a 6-digit pairing code when it starts. The code is single use, expires after 5 minutes (`--pairing-ttl`), and is replaced automatically.
+2. In Str8ZeRO > Agent Mode > Mac Bridge the user taps **Check Bridge**. `GET /health` without a token returns `401` with `"pairing": "available"`, so the app shows *Reachable, not paired* and asks for the code.
+3. The app sends `POST /pair` with the code. The bridge returns a random 256-bit token. The app stores it in the iOS Keychain (`AfterFirstUnlockThisDeviceOnly`, keyed by bridge host:port). The bridge stores only a SHA-256 hash of it in `~/.privateagent/bridge_devices.json`.
+4. After that, every request carries the token. If the bridge rejects it (for example after `--forget-devices`), the app shows *Token invalid*, deletes the token, and asks for a new code.
+
+Rate limits: a code is dropped after 5 wrong attempts. After 15 wrong attempts in total, pairing locks until the bridge restarts. Tokens and codes are compared in constant time. Tokens are never printed or logged; only `****abcd`-style redactions are.
+
+`--token <value>` still turns on a legacy static token for older scripts. `--no-pairing` turns off `/pair`.
+
+### `POST /pair` (no auth)
+
+Request:
+
+```json
+{ "code": "482913", "deviceName": "Str8ZeRO on iPhone" }
+```
+
+Responses:
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | `{"token": "<64 hex>", "service": "PrivateAgent Mac Bridge", "deviceName": "..."}` | Paired |
+| 400 | `{"error": "invalid_request"}` | Code missing or not 6 digits |
+| 403 | `{"error": "invalid_code", "attemptsRemaining": 3}` | Wrong code |
+| 403 | `{"error": "pairing_disabled"}` | Started with `--no-pairing` |
+| 410 | `{"error": "code_expired"}` | Code expired; a new one is printed |
+| 429 | `{"error": "pairing_locked"}` | Too many wrong codes; restart the bridge |
+
+### Unauthorized responses
+
+```json
+{ "error": "unauthorized", "reason": "missing_token" | "invalid_token", "pairing": "available" | "locked" | "disabled" }
+```
 
 ## Endpoints
 
@@ -127,4 +163,4 @@ Each adapter should plug into the same `/observation` and `/action` protocol ins
 
 Agent Mode now composes these adapters at runtime: when Mac-assisted or WebDriverAgent is allowed and a host is configured, `CapabilityRuntime` observes and executes through that client instead of leaving the contracts unused.
 
-To pair an already-connected iPhone, run `Scripts/start-mac-bridge.sh` on the MacBook and open the printed `privateagent://pair` link. See `Docs/MAC_IPHONE_PAIRING.md`.
+To pair an iPhone, start the bridge (`Scripts/start-mac-bridge.sh` on a Mac, `Scripts/start-bridge-windows.ps1` on Windows, or `python Bridge/mac_bridge_helper.py`) and enter the printed pairing code under **Check Bridge**. The printed `privateagent://pair?host=…&port=…&code=…` link does the same thing. See `Docs/MAC_IPHONE_PAIRING.md`.

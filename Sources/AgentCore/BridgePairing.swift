@@ -111,46 +111,113 @@ public struct BridgePairing: Sendable, Codable, Equatable {
     }
 }
 
+/// A `privateagent://pair` link. New bridges print a one-time `code`
+/// (never the token); older links that embed a `token` are still accepted.
+public enum BridgePairingLink: Sendable, Equatable {
+    case code(host: String, port: Int, code: String)
+    case token(BridgePairing)
+
+    public static func parse(_ url: URL) -> BridgePairingLink? {
+        guard url.scheme?.lowercased() == InAppDeepLink.scheme,
+              (url.host ?? "").lowercased() == "pair" else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String? {
+            items.first(where: { $0.name == name })?.value
+        }
+        guard let host = value("host"), !host.isEmpty else { return nil }
+        let port = Int(value("port") ?? "") ?? PrivateAgentLAN.bridgePort
+        if let raw = value("code"), let code = BridgeConnectionManager.normalizePairingCode(raw) {
+            return .code(host: host, port: port, code: code)
+        }
+        if let pairing = BridgePairing.fromDeepLink(url) {
+            return .token(pairing)
+        }
+        return nil
+    }
+}
+
+/// Persists bridge settings. Host/port/flags live in UserDefaults; tokens
+/// live only in the `secrets` store (the Keychain in the app). Tokens left
+/// in UserDefaults by older builds are migrated and deleted on load/save.
 public enum BridgePairingStore {
     public static let hostKey = "PrivateAgent.bridgeHost"
     public static let portKey = "PrivateAgent.bridgePort"
+    /// Legacy UserDefaults key (pre-Keychain). Only read for migration.
     public static let tokenKey = "PrivateAgent.bridgeToken"
     public static let wdaHostKey = "PrivateAgent.wdaHost"
     public static let wdaPortKey = "PrivateAgent.wdaPort"
+    /// Legacy UserDefaults key (pre-Keychain). Only read for migration.
     public static let wdaTokenKey = "PrivateAgent.wdaToken"
     public static let macAssistedKey = "PrivateAgent.enableMacAssisted"
     public static let wdaEnabledKey = "PrivateAgent.enableWebDriverAgent"
 
-    public static func save(_ pairing: BridgePairing, defaults: UserDefaults = .standard) {
+    public static func save(
+        _ pairing: BridgePairing,
+        defaults: UserDefaults = .standard,
+        secrets: any CredentialStore = CredentialStores.secure()
+    ) {
         defaults.set(pairing.host, forKey: hostKey)
         defaults.set(String(pairing.port), forKey: portKey)
-        defaults.set(pairing.token, forKey: tokenKey)
         defaults.set(pairing.wdaHost, forKey: wdaHostKey)
         defaults.set(String(pairing.wdaPort), forKey: wdaPortKey)
-        defaults.set(pairing.wdaToken, forKey: wdaTokenKey)
         defaults.set(pairing.enableMacAssisted, forKey: macAssistedKey)
         defaults.set(pairing.enableWebDriverAgent, forKey: wdaEnabledKey)
+        if !pairing.token.isEmpty {
+            try? secrets.set(pairing.token, forKey: CredentialKeys.bridgeToken(host: pairing.host, port: pairing.port))
+        }
+        if !pairing.wdaToken.isEmpty {
+            try? secrets.set(pairing.wdaToken, forKey: CredentialKeys.wdaToken(host: pairing.wdaHost, port: pairing.wdaPort))
+        }
+        defaults.removeObject(forKey: tokenKey)
+        defaults.removeObject(forKey: wdaTokenKey)
+    }
+
+    /// Moves tokens that older builds stored in UserDefaults into `secrets`.
+    public static func migrateLegacyTokens(
+        defaults: UserDefaults = .standard,
+        secrets: any CredentialStore = CredentialStores.secure()
+    ) {
+        let host = defaults.string(forKey: hostKey) ?? PrivateAgentLAN.macHost
+        let port = Int(defaults.string(forKey: portKey) ?? "") ?? PrivateAgentLAN.bridgePort
+        if let legacy = defaults.string(forKey: tokenKey) {
+            if !legacy.isEmpty {
+                try? secrets.set(legacy, forKey: CredentialKeys.bridgeToken(host: host, port: port))
+            }
+            defaults.removeObject(forKey: tokenKey)
+        }
+        let wdaHost = defaults.string(forKey: wdaHostKey) ?? "127.0.0.1"
+        let wdaPort = Int(defaults.string(forKey: wdaPortKey) ?? "") ?? 8101
+        if let legacy = defaults.string(forKey: wdaTokenKey) {
+            if !legacy.isEmpty {
+                try? secrets.set(legacy, forKey: CredentialKeys.wdaToken(host: wdaHost, port: wdaPort))
+            }
+            defaults.removeObject(forKey: wdaTokenKey)
+        }
     }
 
     public static func load(
         defaults: UserDefaults = .standard,
+        secrets: any CredentialStore = CredentialStores.secure(),
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> BridgePairing? {
         if let env = BridgePairing.fromEnvironment(environment) {
             return env
         }
-        guard let host = defaults.string(forKey: hostKey), !host.isEmpty,
-              let token = defaults.string(forKey: tokenKey), !token.isEmpty else {
+        migrateLegacyTokens(defaults: defaults, secrets: secrets)
+        guard let host = defaults.string(forKey: hostKey), !host.isEmpty else { return nil }
+        let port = Int(defaults.string(forKey: portKey) ?? "") ?? PrivateAgentLAN.bridgePort
+        guard let token = secrets.string(forKey: CredentialKeys.bridgeToken(host: host, port: port)), !token.isEmpty else {
             return nil
         }
-        let port = Int(defaults.string(forKey: portKey) ?? "") ?? PrivateAgentLAN.bridgePort
+        let wdaHost = defaults.string(forKey: wdaHostKey) ?? "127.0.0.1"
+        let wdaPort = Int(defaults.string(forKey: wdaPortKey) ?? "") ?? 8101
         return BridgePairing(
             host: host,
             port: port,
             token: token,
-            wdaHost: defaults.string(forKey: wdaHostKey) ?? "127.0.0.1",
-            wdaPort: Int(defaults.string(forKey: wdaPortKey) ?? "") ?? 8101,
-            wdaToken: defaults.string(forKey: wdaTokenKey) ?? "",
+            wdaHost: wdaHost,
+            wdaPort: wdaPort,
+            wdaToken: secrets.string(forKey: CredentialKeys.wdaToken(host: wdaHost, port: wdaPort)) ?? "",
             enableMacAssisted: defaults.object(forKey: macAssistedKey) as? Bool ?? true,
             enableWebDriverAgent: defaults.object(forKey: wdaEnabledKey) as? Bool ?? false
         )
@@ -196,7 +263,7 @@ public enum BridgePairingDoctor {
                 onDarwin: onDarwin,
                 selfHostedWorkerAvailable: false,
                 recommendedModes: modes,
-                nextAction: "This Cloud Agent cannot reach \(PrivateAgentLAN.macHost):\(PrivateAgentLAN.sshPort). From a machine on that LAN: ssh -p \(PrivateAgentLAN.sshPort) \(PrivateAgentLAN.sshUser)@\(PrivateAgentLAN.macHost) then ./Scripts/start-mac-bridge.sh, and open the printed privateagent://pair link on the iPhone.",
+                nextAction: "This Cloud Agent cannot reach \(PrivateAgentLAN.macHost):\(PrivateAgentLAN.sshPort). From a machine on that LAN: ssh -p \(PrivateAgentLAN.sshPort) \(PrivateAgentLAN.sshUser)@\(PrivateAgentLAN.macHost) then ./Scripts/start-mac-bridge.sh, and enter the printed pairing code under Check Bridge on the iPhone.",
                 canDriveIPhoneFromThisProcess: false
             )
         }
