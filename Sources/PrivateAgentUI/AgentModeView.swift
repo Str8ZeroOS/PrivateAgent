@@ -64,14 +64,22 @@ public struct AgentModeView: View {
                 if viewModel.isRunning {
                     ProgressView()
                 }
-                if let message = viewModel.loopSnapshot?.outcomeMessage {
+                if viewModel.runSummary == nil, let message = viewModel.loopSnapshot?.outcomeMessage {
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            if let progress = viewModel.loopSnapshot?.goalProgress, !progress.subGoals.isEmpty {
+            if let summary = viewModel.runSummary {
+                Section("Result") {
+                    MarkdownText(markdown: summary.markdown)
+                        .font(.callout)
+                }
+            }
+
+            if viewModel.runSummary == nil || viewModel.isRunning,
+               let progress = viewModel.loopSnapshot?.goalProgress, !progress.subGoals.isEmpty {
                 Section("Sub-goals") {
                     ForEach(progress.subGoals) { subGoal in
                         VStack(alignment: .leading, spacing: 2) {

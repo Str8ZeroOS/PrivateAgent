@@ -168,6 +168,10 @@ let package = Package(
             name: "AgentCoreTests",
             dependencies: ["AgentCore"]
         ),
+        .testTarget(
+            name: "PrivateAgentUITests",
+            dependencies: ["PrivateAgentUI", "AgentCore", "ModelPack"]
+        ),
     ]
 )
 #endif

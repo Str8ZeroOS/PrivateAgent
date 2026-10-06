@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AgentCore
 
 public struct AgentHistoryView: View {
     @Query(sort: \AgentRunRecord.createdAt, order: .reverse) private var records: [AgentRunRecord]
@@ -43,6 +44,15 @@ private struct AgentRunRecordDetailView: View {
                 LabeledContent("Goal", value: record.goal)
                 LabeledContent("Planner", value: record.planningMode)
                 LabeledContent("Created", value: record.createdAt.formatted())
+            }
+
+            if AssistantStylePreferences.isEnabled(),
+               let snapshot = AgentRunRecordCoding.decode(AgentLoopSnapshot.self, from: record.loopSnapshotJSON),
+               snapshot.phase != .idle {
+                Section("Result") {
+                    MarkdownText(markdown: AgentRunSummaryFormatter.summarize(snapshot).markdown)
+                        .font(.callout)
+                }
             }
 
             if let errorMessage = record.errorMessage {

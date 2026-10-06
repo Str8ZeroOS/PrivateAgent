@@ -51,4 +51,11 @@ public enum AgentRunRecordCoding {
         guard let data = try? encoder.encode(value) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    public static func decode<T: Decodable>(_ type: T.Type, from json: String?) -> T? {
+        guard let json, let data = json.data(using: .utf8) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(type, from: data)
+    }
 }

@@ -49,14 +49,14 @@ struct MessageBubble: View {
     @ViewBuilder
     private var bubbleText: some View {
         let content = displayContent
-        if let attributed = try? AttributedString(markdown: content, options: .init(interpretedSyntax: .full)) {
-            Text(attributed)
-                .font(.body)
-                .textSelection(.enabled)
-        } else {
+        if isUser {
+            // User text is shown as typed (no Markdown interpretation).
             Text(content)
                 .font(.body)
                 .textSelection(.enabled)
+        } else {
+            MarkdownText(markdown: content)
+                .font(.body)
         }
     }
 }

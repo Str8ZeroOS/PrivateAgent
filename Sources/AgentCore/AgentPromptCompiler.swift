@@ -2,9 +2,11 @@ import Foundation
 
 public struct AgentPromptCompiler: Sendable {
     private let systemPrompt: String
+    private let answerStyleEnabled: Bool
 
-    public init(systemPrompt: String = AgentSystemPrompt.balanced) {
+    public init(systemPrompt: String = AgentSystemPrompt.balanced, answerStyleEnabled: Bool = true) {
         self.systemPrompt = systemPrompt
+        self.answerStyleEnabled = answerStyleEnabled
     }
 
     public func compilePrompt(observation: AgentObservation, allowedModes: [AutomationMode]) -> String {
@@ -56,7 +58,7 @@ public struct AgentPromptCompiler: Sendable {
 
         Verification kinds: none, url_contains, visible_text_contains, control_exists, app_context_contains, state_predicate.
         Prefer one next action. After that action the runtime will observe and verify before planning again.
-        Use answer only when the user asked to reply/say a specific phrase; the answer text must be exactly that phrase.
+        Use answer only when the user asked to reply/say a specific phrase; the answer text must be exactly that phrase.\(answerStyleEnabled ? "\n" + AssistantStyleGuide.agentActionTextPrompt : "")
         Never mark a third-party app task (Apple Notes, Instagram, Safari, and similar) complete by echoing the goal. If iOS cannot drive that app from inside Str8ZeRO and there is no live Mac/WDA observation, ask the user or hand off instead of inventing success.
 
         Action encodings:

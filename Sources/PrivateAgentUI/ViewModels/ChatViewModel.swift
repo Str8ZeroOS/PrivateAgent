@@ -4,6 +4,7 @@ import Observation
 import FlashMoEBridge
 import ModelPack
 import ModelHub
+import AgentCore
 
 @MainActor
 @Observable
@@ -162,11 +163,12 @@ final class ChatViewModel {
             stream = engine.generateContinuation(text)
         } else {
             print("[CHAT] Using full generate (independent question), system prompt only")
-            let systemPrompt = conversation.systemPrompt
-            var chatMessages: [ChatMessage] = [
-                ChatMessage(role: "system", content: systemPrompt),
-                ChatMessage(role: "user", content: text)
-            ]
+            // Same system prompt + answer style guide as the cloud provider.
+            let chatMessages = Self.onDeviceMessages(
+                systemPrompt: conversation.systemPrompt,
+                userText: text,
+                styleEnabled: AssistantStylePreferences.isEnabled()
+            )
             let prompt = PromptCompiler.compile(messages: chatMessages, addGenerationPrompt: true)
             stream = engine.generate(.formattedPrompt(prompt))
         }
@@ -267,15 +269,15 @@ final class ChatViewModel {
         let text = inputText
         inputText = ""
 
-        // History before this turn, then the new user message.
+        // History before this turn, then the new user message. The system
+        // prompt carries the same answer style guide as the on-device engine.
         let prior = sortedMessages.filter { !$0.content.isEmpty }
-        var wire: [CloudMessage] = []
-        let sys = Self.cloudSystemPrompt(conversation.systemPrompt)
-        if !sys.isEmpty { wire.append(CloudMessage(role: "system", content: sys)) }
-        for m in prior {
-            wire.append(CloudMessage(role: m.role == .user ? "user" : "assistant", content: m.content))
-        }
-        wire.append(CloudMessage(role: "user", content: text))
+        let wire = Self.cloudMessages(
+            systemPrompt: conversation.systemPrompt,
+            history: prior.map { AssistantChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.content) },
+            userText: text,
+            styleEnabled: AssistantStylePreferences.isEnabled()
+        )
 
         let userMessage = Message(role: .user, content: text, ordinal: conversation.messages.count)
         userMessage.conversation = conversation
@@ -333,12 +335,30 @@ final class ChatViewModel {
         }
     }
 
-    /// Qwen-only control lines (like /no_think) are meaningless to cloud models.
-    private static func cloudSystemPrompt(_ s: String) -> String {
-        s.split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { $0.trimmingCharacters(in: .whitespaces) != "/no_think" }
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// On-device (ChatML) messages for an independent question.
+    nonisolated static func onDeviceMessages(systemPrompt: String, userText: String, styleEnabled: Bool) -> [ChatMessage] {
+        AssistantPromptBuilder.messages(
+            provider: .onDevice,
+            baseSystemPrompt: systemPrompt,
+            userText: userText,
+            styleEnabled: styleEnabled
+        ).map { ChatMessage(role: $0.role, content: $0.content) }
+    }
+
+    /// NVIDIA cloud messages. Qwen-only control lines (like /no_think) are dropped.
+    nonisolated static func cloudMessages(
+        systemPrompt: String,
+        history: [AssistantChatTurn],
+        userText: String,
+        styleEnabled: Bool
+    ) -> [CloudMessage] {
+        AssistantPromptBuilder.messages(
+            provider: .cloudNVIDIA,
+            baseSystemPrompt: systemPrompt,
+            history: history,
+            userText: userText,
+            styleEnabled: styleEnabled
+        ).map { CloudMessage(role: $0.role, content: $0.content) }
     }
 
     /// Mark KV cache as stale — next send will do a full generate.
