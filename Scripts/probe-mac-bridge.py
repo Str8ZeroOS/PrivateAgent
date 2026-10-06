@@ -29,7 +29,8 @@ def load_env_file(path: str) -> dict[str, str]:
 def request_json(url: str, token: str, method: str = "GET", body: dict | None = None) -> tuple[int, dict]:
     data = None if body is None else json.dumps(body).encode("utf-8")
     request = urllib.request.Request(url, data=data, method=method)
-    request.add_header("Authorization", "Bearer %s" % token)
+    if token:
+        request.add_header("Authorization", "Bearer %s" % token)
     if body is not None:
         request.add_header("Content-Type", "application/json")
     try:
@@ -43,6 +44,8 @@ def request_json(url: str, token: str, method: str = "GET", body: dict | None = 
         except Exception:
             payload = {"error": raw}
         return exc.code, payload
+    except (urllib.error.URLError, OSError) as exc:
+        return 0, {"error": "unreachable: %s" % getattr(exc, "reason", exc)}
 
 
 def main() -> int:
@@ -63,13 +66,23 @@ def main() -> int:
         except ValueError:
             port = args.port
 
-    if not host or not token:
-        print("No pairing found. Run Scripts/start-mac-bridge.sh on the MacBook.")
+    if not host:
+        print("No bridge host. Pass --host <bridge LAN IP>.")
         return 2
 
     health_url = "http://%s:%s/health" % (host, port)
     status, payload = request_json(health_url, token)
     print(json.dumps({"url": health_url, "status": status, "body": payload}, indent=2, sort_keys=True))
+    if status == 0:
+        print("Bridge unreachable. Is Bridge/mac_bridge_helper.py running and is TCP %s allowed through the firewall?" % port)
+        return 1
+    if status == 401:
+        if token:
+            print("Bridge is up but rejected the token (%s)." % payload.get("reason", "unauthorized"))
+        else:
+            print("Bridge is up and unpaired (pairing: %s). Pair from Str8ZeRO with the code in the bridge window."
+                  % payload.get("pairing", "unknown"))
+        return 0 if not token else 1
     if status != 200:
         return 1
 

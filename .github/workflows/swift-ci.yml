@@ -38,6 +38,9 @@ jobs:
       - name: Cross-platform Swift preflight
         run: python3 Scripts/check-cross-platform-swift.py 2>&1 | tee cross-platform-preflight.log
 
+      - name: Bridge pairing / WDA adapter tests (Python)
+        run: python3 -m unittest discover -s Bridge/tests -v 2>&1 | tee bridge-python-tests.log
+
       - name: Resolve package dependencies
         run: swift package resolve 2>&1 | tee package-resolve.log
 
@@ -56,6 +59,7 @@ jobs:
             xcode-version.log
             swift-version.log
             cross-platform-preflight.log
+            bridge-python-tests.log
             package-resolve.log
             swift-build.log
             swift-test.log

@@ -6,6 +6,18 @@ This helper exposes a small authenticated HTTP API on the local network:
 - GET /health
 - POST /observation
 - POST /action
+- POST /pair   (unauthenticated; exchanges a one-time pairing code for a token)
+
+Pairing: on start the helper prints a 6-digit one-time pairing code (it
+rotates every few minutes). In Str8ZeRO > Agent Mode > Mac Bridge, tap
+"Check Bridge", type the code and tap "Pair". The app POSTs the code to /pair
+and receives a random bearer token, which it keeps in the iOS Keychain. Only a
+SHA-256 hash of each issued token is stored on this computer, and tokens are
+never printed. Wrong codes are rate limited (a code dies after 5 misses and
+pairing locks after 15 misses until restart).
+
+It runs on macOS (including old Python 2.7 installs) and on Windows/Linux,
+where the Mac-only actions report themselves as unavailable.
 
 Low-risk Mac actions are enabled by default. Privacy-sensitive observation and
 UI-control actions require explicit launch flags so the bridge can move toward
@@ -18,11 +30,19 @@ newer machines.
 from __future__ import print_function
 
 import argparse
+import binascii
+import hashlib
+import hmac
 import json
+import os
 import platform
+import random
+import socket
 import subprocess
 import sys
+import threading
 import time
+import webbrowser
 
 try:  # Python 3
     from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -56,6 +76,17 @@ SCROLL_KEY_CODES = {
 IPHONE_MIRRORING_MARKERS = (
     "iphone mirroring",
 )
+
+IS_MAC = sys.platform == "darwin"
+
+try:  # Python 2: JSON strings arrive as unicode
+    TEXT_TYPES = (str, unicode)  # noqa: F821
+except NameError:  # Python 3
+    TEXT_TYPES = (str,)
+DEFAULT_PAIRING_TTL = 300
+MAX_ATTEMPTS_PER_CODE = 5
+MAX_TOTAL_PAIRING_FAILURES = 15
+MAX_BODY_BYTES = 256 * 1024
 
 
 def iso_now():
@@ -92,6 +123,8 @@ def apple_string(value):
 
 
 def frontmost_app():
+    if not IS_MAC:
+        return "unavailable on %s" % platform.system()
     ok, out, err = run_osascript('tell application "System Events" to get name of first process whose frontmost is true')
     if ok and out:
         return out
@@ -185,6 +218,13 @@ def clipboard_summary(enabled):
 def open_url(url):
     if not isinstance(url, str) or not (url.startswith("http://") or url.startswith("https://")):
         return "failed", "Refused URL; only http:// and https:// links are allowed."
+    if not IS_MAC:
+        try:
+            if webbrowser.open(url):
+                return "completed", "Opened URL on %s: %s" % (platform.system(), url)
+        except Exception as exc:
+            return "failed", "Failed to open URL: %s" % exc
+        return "failed", "No browser available to open URL."
     ok, _, err = run_command(["/usr/bin/open", url], timeout=5)
     if ok:
         return "completed", "Opened URL on Mac: %s" % url
@@ -279,6 +319,244 @@ def execute_action(action, state):
     return "failed", "Unsupported bridge action: %s" % name
 
 
+def to_bytes(value):
+    if isinstance(value, bytes):
+        return value
+    return value.encode("utf-8")
+
+
+def constant_time_equals(left, right):
+    if not isinstance(left, TEXT_TYPES + (bytes,)) or not isinstance(right, TEXT_TYPES + (bytes,)):
+        return False
+    try:
+        left_bytes = to_bytes(left)
+        right_bytes = to_bytes(right)
+    except Exception:
+        return False
+    compare = getattr(hmac, "compare_digest", None)
+    if compare is not None:
+        return compare(left_bytes, right_bytes)
+    if len(left_bytes) != len(right_bytes):
+        return False
+    result = 0
+    for a, b in zip(bytearray(left_bytes), bytearray(right_bytes)):
+        result |= a ^ b
+    return result == 0
+
+
+def new_token():
+    return str(binascii.hexlify(os.urandom(32)).decode("ascii"))
+
+
+def token_hash(token):
+    return str(hashlib.sha256(to_bytes(token)).hexdigest())
+
+
+def redact(secret):
+    if not secret:
+        return "<none>"
+    return "****%s (%d chars)" % (secret[-4:], len(secret)) if len(secret) > 8 else "****"
+
+
+def lan_ip_guess():
+    """Best-effort LAN address (no packets are sent)."""
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("10.255.255.255", 1))
+        return sock.getsockname()[0]
+    except Exception:
+        return None
+    finally:
+        if sock is not None:
+            sock.close()
+
+
+def default_state_dir():
+    return os.path.join(os.path.expanduser("~"), ".privateagent")
+
+
+class PairingManager(object):
+    """One-time pairing codes -> random bearer tokens.
+
+    Only SHA-256 hashes of issued tokens are persisted. Codes are 6 digits,
+    single use, expire after `ttl` seconds, and are rate limited.
+    """
+
+    def __init__(self, enabled=True, state_path=None, ttl=DEFAULT_PAIRING_TTL,
+                 printer=None, clock=time.time, advertise=None):
+        self.enabled = enabled
+        self.state_path = state_path
+        self.ttl = max(int(ttl), 30)
+        self.printer = printer or (lambda line: (print(line), sys.stdout.flush()))
+        self.clock = clock
+        self.advertise = advertise  # (host, port) for the deep link, or None
+        self.lock = threading.Lock()
+        self.devices = self._load()
+        self.code = None
+        self.expires_at = 0
+        self.attempts = 0
+        self.total_failures = 0
+        self.locked = False
+        self._rng = random.SystemRandom()
+        if self.enabled:
+            self._rotate_locked("start")
+
+    # -- persistence ---------------------------------------------------
+    def _load(self):
+        if not self.state_path or not os.path.exists(self.state_path):
+            return []
+        try:
+            with open(self.state_path, "r") as handle:
+                data = json.load(handle)
+            devices = data.get("devices") or []
+            return [d for d in devices if isinstance(d, dict) and d.get("tokenSha256")]
+        except Exception:
+            return []
+
+    def _save(self):
+        if not self.state_path:
+            return
+        directory = os.path.dirname(self.state_path)
+        if directory and not os.path.isdir(directory):
+            os.makedirs(directory)
+        tmp = self.state_path + ".tmp"
+        with open(tmp, "w") as handle:
+            json.dump({"devices": self.devices}, handle, indent=2, sort_keys=True)
+        try:
+            os.chmod(tmp, 0o600)
+        except Exception:
+            pass
+        replace = getattr(os, "replace", None)
+        if replace is not None:
+            replace(tmp, self.state_path)
+        else:  # Python 2 (macOS): rename overwrites atomically on POSIX
+            os.rename(tmp, self.state_path)
+
+    def forget_all(self):
+        with self.lock:
+            self.devices = []
+            self._save()
+
+    # -- codes -----------------------------------------------------------
+    def _rotate_locked(self, reason):
+        self.code = "%06d" % self._rng.randint(0, 999999)
+        self.expires_at = self.clock() + self.ttl
+        self.attempts = 0
+        self._announce(reason)
+
+    def _announce(self, reason):
+        pretty = "%s %s" % (self.code[:3], self.code[3:])
+        minutes = max(1, int(round(self.ttl / 60.0)))
+        lines = [
+            "",
+            "=" * 60,
+            "  Str8ZeRO pairing code: %s   (valid %d min, one use)" % (pretty, minutes),
+            "  iPhone: Agent Mode > Mac Bridge > Check Bridge > enter code > Pair",
+        ]
+        if self.advertise:
+            lines.append("  Or open on the iPhone: privateagent://pair?host=%s&port=%s&code=%s"
+                         % (self.advertise[0], self.advertise[1], self.code))
+        if reason == "expired":
+            lines.append("  (previous code expired)")
+        elif reason == "too_many_attempts":
+            lines.append("  (previous code was retired after too many wrong attempts)")
+        elif reason == "paired":
+            lines.append("  (previous code was used; this one is for another device)")
+        lines.append("=" * 60)
+        for line in lines:
+            self.printer(line)
+
+    def tick(self):
+        with self.lock:
+            if self.enabled and not self.locked and self.clock() >= self.expires_at:
+                self._rotate_locked("expired")
+
+    def status(self):
+        if not self.enabled:
+            return "disabled"
+        if self.locked:
+            return "locked"
+        return "available"
+
+    def attempt(self, code, device_name, remote=None):
+        """Returns (http_status, payload)."""
+        with self.lock:
+            if not self.enabled:
+                return 403, {"error": "pairing_disabled"}
+            if self.locked:
+                return 429, {"error": "pairing_locked"}
+            if not isinstance(code, TEXT_TYPES) or len(code) != 6 or not all(c in "0123456789" for c in code):
+                return 400, {"error": "invalid_request", "message": "code must be 6 digits"}
+            if self.clock() >= self.expires_at:
+                self._rotate_locked("expired")
+                return 410, {"error": "code_expired"}
+            if not constant_time_equals(code, self.code):
+                self.attempts += 1
+                self.total_failures += 1
+                if self.total_failures >= MAX_TOTAL_PAIRING_FAILURES:
+                    self.locked = True
+                    self.printer("Pairing LOCKED after %d wrong codes (last from %s). Restart the bridge to pair again."
+                                 % (self.total_failures, remote or "unknown"))
+                    return 429, {"error": "pairing_locked"}
+                remaining = MAX_ATTEMPTS_PER_CODE - self.attempts
+                if remaining <= 0:
+                    self._rotate_locked("too_many_attempts")
+                    remaining = 0
+                self.printer("Wrong pairing code from %s." % (remote or "unknown"))
+                return 403, {"error": "invalid_code", "attemptsRemaining": remaining}
+
+            token = new_token()
+            name = device_name if isinstance(device_name, TEXT_TYPES) and device_name else "iPhone"
+            name = name[:64]
+            printable = name.encode("ascii", "replace").decode("ascii")
+            self.devices.append({
+                "tokenSha256": token_hash(token),
+                "deviceName": name,
+                "pairedAt": iso_now(),
+            })
+            self.devices = self.devices[-20:]
+            try:
+                self._save()
+            except Exception as exc:
+                self.printer("Warning: could not save paired devices: %s" % exc)
+            self.printer("Paired with '%s' from %s." % (printable, remote or "unknown"))
+            self._rotate_locked("paired")
+            return 200, {"token": token, "service": "PrivateAgent Mac Bridge", "deviceName": name}
+
+    def is_authorized_token(self, token):
+        if not token:
+            return False
+        try:
+            digest = token_hash(token)
+        except Exception:
+            return False
+        with self.lock:
+            devices = list(self.devices)
+        matched = False
+        for device in devices:
+            if constant_time_equals(digest, device.get("tokenSha256", "")):
+                matched = True
+        return matched
+
+    def start_rotation_thread(self):
+        if not self.enabled:
+            return None
+
+        def loop():
+            while True:
+                time.sleep(1)
+                try:
+                    self.tick()
+                except Exception:
+                    pass
+
+        thread = threading.Thread(target=loop, name="pairing-rotation")
+        thread.daemon = True
+        thread.start()
+        return thread
+
+
 class BridgeState(object):
     def __init__(
         self,
@@ -287,8 +565,10 @@ class BridgeState(object):
         enable_clipboard_observation=False,
         enable_ax_observation=False,
         enable_iphone_mirroring=False,
+        pairing=None,
     ):
-        self.token = token
+        self.token = token or ""
+        self.pairing = pairing or PairingManager(enabled=False)
         self.enable_accessibility_actions = enable_accessibility_actions
         self.enable_clipboard_observation = enable_clipboard_observation
         self.enable_ax_observation = enable_ax_observation
@@ -299,6 +579,7 @@ class BridgeState(object):
     def capabilities(self):
         result = [
             "health",
+            "pairing",
             "frontmostAppObservation",
             "openURL",
             "openAllowlistedMacApp",
@@ -330,6 +611,16 @@ class BridgeState(object):
         if not flags:
             return "guarded-actions"
         return "guarded-actions+" + "+".join(flags)
+
+    def is_authorized(self, header):
+        if not isinstance(header, TEXT_TYPES) or not header.startswith("Bearer "):
+            return False
+        presented = header[len("Bearer "):].strip()
+        if not presented:
+            return False
+        if self.token and constant_time_equals(presented, self.token):
+            return True
+        return self.pairing.is_authorized_token(presented)
 
     def record(self, event):
         event["receivedAt"] = iso_now()
@@ -363,13 +654,23 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _authorized(self):
+        return self.state.is_authorized(self.headers.get("Authorization", ""))
+
+    def _send_unauthorized(self):
         header = self.headers.get("Authorization", "")
-        return header == "Bearer %s" % self.state.token
+        reason = "invalid_token" if header else "missing_token"
+        self._send_json(401, {
+            "error": "unauthorized",
+            "reason": reason,
+            "pairing": self.state.pairing.status(),
+        })
 
     def _read_body(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
         if length <= 0:
             return {}
+        if length > MAX_BODY_BYTES:
+            raise ValueError("request body too large")
         raw = self.rfile.read(length)
         if not isinstance(raw, str):
             raw = raw.decode("utf-8")
@@ -380,7 +681,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not_found"})
             return
         if not self._authorized():
-            self._send_json(401, {"error": "unauthorized"})
+            self._send_unauthorized()
             return
         self._send_json(
             200,
@@ -398,8 +699,27 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self):  # noqa: N802
+        if self.path == "/pair":
+            try:
+                body = self._read_body()
+            except Exception:
+                self._send_json(400, {"error": "invalid_request"})
+                return
+            if not isinstance(body, dict):
+                body = {}
+            code = body.get("code")
+            if code is not None and not isinstance(code, TEXT_TYPES):
+                code = None
+            status, payload = self.state.pairing.attempt(
+                code,
+                body.get("deviceName"),
+                remote=self.client_address[0] if self.client_address else None,
+            )
+            self._send_json(status, payload)
+            return
+
         if not self._authorized():
-            self._send_json(401, {"error": "unauthorized"})
+            self._send_unauthorized()
             return
 
         try:
@@ -468,23 +788,57 @@ def main():
     parser = argparse.ArgumentParser(description="PrivateAgent Mac bridge helper")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--token", required=True)
+    parser.add_argument("--token", default=os.environ.get("PRIVATEAGENT_BRIDGE_TOKEN", ""),
+                        help="Optional legacy static token. Prefer pairing codes.")
+    parser.add_argument("--no-pairing", action="store_true", help="Disable /pair (only the static --token works).")
+    parser.add_argument("--pairing-ttl", type=int, default=DEFAULT_PAIRING_TTL, help="Seconds each pairing code stays valid.")
+    parser.add_argument("--state-dir", default=default_state_dir(), help="Where paired-device token hashes are stored.")
+    parser.add_argument("--forget-devices", action="store_true", help="Revoke every paired device before starting.")
+    parser.add_argument("--advertise-host", default=None, help="LAN IP to show in the pairing link (auto-detected).")
     parser.add_argument("--enable-accessibility-actions", action="store_true")
     parser.add_argument("--enable-clipboard-observation", action="store_true")
     parser.add_argument("--enable-ax-observation", action="store_true")
     parser.add_argument("--enable-iphone-mirroring", action="store_true")
     args = parser.parse_args()
 
+    if args.no_pairing and not args.token:
+        parser.error("--no-pairing needs --token, otherwise nothing could ever authenticate.")
+
     server = ThreadingHTTPServer((args.host, args.port), Handler)
+    advertise_host = args.advertise_host
+    if not advertise_host:
+        advertise_host = args.host if args.host not in ("0.0.0.0", "") else lan_ip_guess()
+
+    print("PrivateAgent Mac Bridge listening on http://%s:%s" % (args.host, args.port))
+    if advertise_host:
+        print("iPhone should use Host %s, Port %s" % (advertise_host, args.port))
+    sys.stdout.flush()
+
+    state_path = os.path.join(args.state_dir, "bridge_devices.json")
+    pairing = PairingManager(
+        enabled=not args.no_pairing,
+        state_path=state_path,
+        ttl=args.pairing_ttl,
+        advertise=(advertise_host, args.port) if advertise_host else None,
+    )
+    if args.forget_devices:
+        pairing.forget_all()
+        print("Forgot all paired devices.")
+    elif pairing.devices:
+        print("%d paired device(s) remembered in %s" % (len(pairing.devices), state_path))
+    if args.token:
+        print("Legacy static token enabled: %s" % redact(args.token))
+
     server.state = BridgeState(
         args.token,
         enable_accessibility_actions=args.enable_accessibility_actions,
         enable_clipboard_observation=args.enable_clipboard_observation,
         enable_ax_observation=args.enable_ax_observation,
         enable_iphone_mirroring=args.enable_iphone_mirroring,
+        pairing=pairing,
     )
+    pairing.start_rotation_thread()
 
-    print("PrivateAgent Mac Bridge listening on http://%s:%s" % (args.host, args.port))
     print("Mode: %s" % server.state.mode())
     sys.stdout.flush()
     try:

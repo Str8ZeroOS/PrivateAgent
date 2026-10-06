@@ -26,6 +26,11 @@
 		<string>privateagent</string>
 		<string>shortcuts</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Str8ZeRO Agent Mode can connect to an optional Mac helper or WebDriverAgent on your local network.</string>
 	<key>UILaunchScreen</key>
