@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage("maxTokens") private var maxTokens: Double = 2048
     @AppStorage("temperature") private var temperature: Double = 0.7
     @AppStorage("defaultSystemPrompt") private var systemPrompt: String = "You are a helpful assistant."
+    @AppStorage(AssistantStylePreferences.enabledKey) private var answerStyleEnabled: Bool = true
     @AppStorage(CloudSettings.enabledKey) private var cloudEnabled: Bool = false
     @AppStorage(CloudSettings.modelKey) private var cloudModel: String = CloudSettings.defaultModel
     @State private var apiKeyDraft: String = ""
@@ -26,6 +27,13 @@ struct SettingsView: View {
             Section("System Prompt") {
                 TextEditor(text: $systemPrompt)
                     .frame(minHeight: 80)
+            }
+            Section {
+                Toggle("Consistent answer style", isOn: $answerStyleEnabled)
+            } header: {
+                Text("Answer Style")
+            } footer: {
+                Text("Answers lead with the result, use numbered steps for things you need to do, and only say \"done\" when it was verified. Applies to the on-device model, NVIDIA cloud, and Agent Mode summaries.")
             }
             Section {
                 Toggle("Use NVIDIA cloud", isOn: $cloudEnabled)
@@ -82,6 +90,7 @@ struct SettingsView: View {
             extraVisibleText: testResult.isEmpty ? [] : [testResult],
             traits: [
                 "cloudEnabled": cloudEnabled ? "true" : "false",
+                "answerStyle": answerStyleEnabled ? "true" : "false",
                 "keySaved": keySaved ? "true" : "false"
             ]
         )

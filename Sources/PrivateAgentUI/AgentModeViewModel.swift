@@ -74,6 +74,20 @@ public final class AgentModeViewModel {
         reloadPairing()
     }
 
+    /// Outcome-first summary of the last Agent Mode run (rule-based or local
+    /// model), or of "Run Plan Once". Nil while nothing has run or when the
+    /// answer-style setting is off.
+    public var runSummary: AgentRunSummary? {
+        guard AssistantStylePreferences.isEnabled() else { return nil }
+        if let loopSnapshot, loopSnapshot.phase != .idle {
+            return AgentRunSummaryFormatter.summarize(loopSnapshot)
+        }
+        if let plan, !executionResults.isEmpty {
+            return AgentRunSummaryFormatter.summarize(plan: plan, results: executionResults)
+        }
+        return nil
+    }
+
     /// Short status line for the bridge (kept for callers that want a string).
     public var bridgeStatus: String? { bridgeConnection?.summary }
     public var wdaStatus: String? { wdaConnection?.summary }
@@ -264,7 +278,10 @@ public final class AgentModeViewModel {
                     throw PrivateAgentEngineTextGeneratorError.modelNotReady
                 }
                 let generator = PrivateAgentEngineTextGenerator(engine: engine)
-                let planner = LLMAgentPlanner(generator: generator)
+                let planner = LLMAgentPlanner(
+                    generator: generator,
+                    promptCompiler: AgentPromptCompiler(answerStyleEnabled: AssistantStylePreferences.isEnabled())
+                )
                 let result = try await planner.makePlanWithDiagnostics(for: observation, allowedModes: allowedModes)
                 plan = result.plan
                 plannerDiagnostics = result.diagnostics
@@ -278,6 +295,7 @@ public final class AgentModeViewModel {
     public func runPlan() async {
         guard let plan else { return }
         errorMessage = nil
+        loopSnapshot = nil
         executionResults = await runner.run(plan)
     }
 
@@ -311,6 +329,7 @@ public final class AgentModeViewModel {
             }
             planner = LLMAgentPlanner(
                 generator: PrivateAgentEngineTextGenerator(engine: engine),
+                promptCompiler: AgentPromptCompiler(answerStyleEnabled: AssistantStylePreferences.isEnabled()),
                 maxRepairAttempts: AgentLoopLimits.default.maxJSONRepairAttempts
             )
         }
