@@ -50,7 +50,7 @@ struct SettingsView: View {
                     .autocorrectionDisabled()
                 #if os(iOS)
                     .textInputAutocapitalization(.never) // cross-platform-check: allow
-                    .keyboardType(.URL)
+                    .keyboardType(.URL) // cross-platform-check: allow
                 #endif
                 TextField("Model", text: $cloudModel)
                     .autocorrectionDisabled()
