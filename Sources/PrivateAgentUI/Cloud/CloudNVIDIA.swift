@@ -49,6 +49,48 @@ enum CloudSettings {
         }
     }
 
+    // MARK: Keys per saved connection (used by the Connections screen)
+    static func isNVIDIAURL(_ url: String) -> Bool { url.lowercased().contains("nvidia.com") }
+
+    private static func account(for p: CloudProfile) -> String {
+        if isNVIDIAURL(p.baseURL) { return "default" }
+        let host = URL(string: p.baseURL.trimmingCharacters(in: .whitespacesAndNewlines))?.host ?? "custom"
+        return "server:" + host
+    }
+
+    private static func query(for p: CloudProfile) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account(for: p)
+        ]
+    }
+
+    static func apiKey(for p: CloudProfile) -> String? {
+        var q = query(for: p)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func setAPIKey(_ key: String, for p: CloudProfile) {
+        SecItemDelete(query(for: p) as CFDictionary)
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var add = query(for: p)
+        add[kSecValueData as String] = Data(trimmed.utf8)
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        SecItemAdd(add as CFDictionary, nil)
+    }
+
+    static func fingerprint(for p: CloudProfile) -> String? {
+        guard let k = apiKey(for: p), !k.isEmpty else { return nil }
+        let digest = SHA256.hash(data: Data(k.utf8))
+        return digest.prefix(4).map { String(format: "%02x", $0) }.joined()
+    }
     static var selected: CloudProfile {
         let list = profiles
         let id = UserDefaults.standard.string(forKey: selectedKey) ?? ""
@@ -169,8 +211,8 @@ enum CloudError: LocalizedError, Sendable {
 
 extension NVIDIAClient {
     /// One tiny non-streaming request. Returns a short status string for the Settings screen.
-    static func ping(model: String, apiKey: String) async -> String {
-        guard let url = URL(string: endpoint) else { return "Bad URL" }
+    static func ping(model: String, apiKey: String, baseURL: String? = nil) async -> String {
+        guard let url = URL(string: baseURL.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions" } ?? endpoint) else { return "Bad URL" }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = 60

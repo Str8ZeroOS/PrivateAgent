@@ -42,6 +42,15 @@ struct SettingsView: View {
     }
     var body: some View {
         Form {
+            Section {
+                NavigationLink {
+                    ConnectionsView()
+                } label: {
+                    Label("Connections", systemImage: "network")
+                }
+            } footer: {
+                Text("Choose where answers come from (this iPhone, NVIDIA, or your own server) and manage each one's API key.")
+            }
             Section("Generation") {
                 VStack(alignment: .leading) {
                     Text("Max Tokens: \(Int(maxTokens))")
@@ -62,92 +71,6 @@ struct SettingsView: View {
                 Text("Answer Style")
             } footer: {
                 Text("Answers lead with the result, use numbered steps for things you need to do, and only say \"done\" when it was verified. Applies to the on-device model, NVIDIA cloud, and Agent Mode summaries.")
-            }
-            Section {
-                Toggle("Use cloud / private server", isOn: $cloudEnabled)
-                SecureField("API key (optional for your own server)", text: $apiKeyDraft)
-                    .autocorrectionDisabled()
-                Button("Save key") {
-                    CloudSettings.setAPIKey(apiKeyDraft)
-                    keySaved = !apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty
-                    apiKeyDraft = ""
-                }
-                .disabled(apiKeyDraft.isEmpty)
-                Picker("Server", selection: $selectedID) {
-                    ForEach(profiles) { p in
-                        Text(p.name).tag(p.id.uuidString)
-                    }
-                }
-                .onChange(of: selectedID) {
-                    keySaved = CloudSettings.apiKey != nil
-                    testResult = ""
-                }
-                TextField("Name", text: profileBinding(.name))
-                TextField("Server URL (ends in /v1)", text: profileBinding(.baseURL))
-                    .autocorrectionDisabled()
-                #if os(iOS)
-                    .textInputAutocapitalization(.never) // cross-platform-check: allow
-                    .keyboardType(.URL) // cross-platform-check: allow
-                #endif
-                TextField("Model", text: profileBinding(.model))
-                    .autocorrectionDisabled()
-                #if os(iOS)
-                    .textInputAutocapitalization(.never) // cross-platform-check: allow
-                #endif
-                Button("Add another server") {
-                    let p = CloudProfile(name: "New server", baseURL: "http://", model: "")
-                    profiles.append(p)
-                    CloudSettings.saveProfiles(profiles)
-                    selectedID = p.id.uuidString
-                }
-                if profiles.count > 1 {
-                    Button("Delete this server", role: .destructive) {
-                        profiles.removeAll { $0.id.uuidString == selectedID }
-                        CloudSettings.saveProfiles(profiles)
-                        selectedID = profiles[0].id.uuidString
-                    }
-                }
-
-                if !keySaved {
-                    Button("Test connection") {
-                        testResult = "Testing..."
-                        let m = CloudSettings.model
-                        Task {
-                            let r = await NVIDIAClient.ping(model: m, apiKey: CloudSettings.apiKey ?? "")
-                            testResult = "\(m): \(r)"
-                        }
-                    }
-                    if !testResult.isEmpty {
-                        Text(testResult).font(.footnote)
-                    }
-                }
-                if keySaved {
-                    Text("A key is saved in the Keychain.")
-                        .foregroundStyle(.secondary)
-                    Text("Key fingerprint: \(CloudSettings.fingerprint ?? "none")")
-                        .font(.footnote.monospaced())
-                    Button("Test key now") {
-                        testResult = "Testing..."
-                        let m = CloudSettings.model
-                        let k = CloudSettings.apiKey ?? ""
-                        Task {
-                            let r = await NVIDIAClient.ping(model: m, apiKey: k)
-                            testResult = "\(m): \(r)"
-                        }
-                    }
-                    if !testResult.isEmpty {
-                        Text(testResult).font(.footnote)
-                    }
-                    Button("Remove saved key", role: .destructive) {
-                        CloudSettings.setAPIKey("")
-                        keySaved = false
-                        cloudEnabled = false
-                    }
-                }
-            } header: {
-                Text("Cloud / private server")
-            } footer: {
-                Text("When on, your messages go to the server URL above (NVIDIA by default, or your own PC). Turn it off to stay fully on-device.")
             }
             Section {
                 Toggle("Use memory in chats", isOn: $memoryEnabled)
