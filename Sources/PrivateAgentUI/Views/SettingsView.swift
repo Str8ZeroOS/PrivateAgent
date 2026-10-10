@@ -48,6 +48,7 @@ struct SettingsView: View {
                 .disabled(apiKeyDraft.isEmpty)
                 TextField("Server URL (ends in /v1)", text: $cloudBaseURL)
                     .autocorrectionDisabled()
+                    .onChange(of: cloudBaseURL) { keySaved = CloudSettings.apiKey != nil }
                 #if os(iOS)
                     .textInputAutocapitalization(.never) // cross-platform-check: allow
                     .keyboardType(.URL) // cross-platform-check: allow

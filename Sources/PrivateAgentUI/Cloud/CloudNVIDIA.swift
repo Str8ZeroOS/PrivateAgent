@@ -24,7 +24,12 @@ enum CloudSettings {
     static var usesNVIDIA: Bool { baseURL.lowercased().contains("nvidia.com") }
 
     private static let service = "privateagent.nvidia.apikey"
-    private static let account = "default"
+    /// NVIDIA keeps the original Keychain slot. Every other server gets its own slot
+    /// (by host), so switching servers never overwrites a key you already saved.
+    private static var account: String {
+        if usesNVIDIA { return "default" }
+        return "server:" + (URL(string: baseURL)?.host ?? "custom")
+    }
 
     static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
 
