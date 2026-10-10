@@ -130,7 +130,8 @@ struct SettingsView: View {
                 Text("Memory")
             } footer: {
                 Text("Say \"remember that ...\" in any chat, or add items here. Saved items are added to every conversation. With a cloud or private server on, they are sent to it with your messages. Never save passwords or API keys.")
-            }            Section("About") {
+            }
+            Section("About") {
                 LabeledContent("App", value: "Str8ZeRO")
                 LabeledContent("Version", value: "0.1.0")
                 Link("GitHub", destination: URL(string: "https://github.com")!)
