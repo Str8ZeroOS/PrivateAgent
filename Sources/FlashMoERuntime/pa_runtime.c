@@ -119,6 +119,7 @@ int pa_session_load_model(PA_Session *session, const PA_ModelDesc *desc, uint64_
         uint64_t cache_bytes = available_memory > used ? available_memory - used : 0;
         if (cache_bytes > ceiling) cache_bytes = ceiling;
         fmConfig.expert_cache_mb = (int)(cache_bytes >> 20);
+    fmConfig.expert_cache_mb = 0; /* TEST: cache off to isolate <unk> output */
     }
 
     int loadResult = flashmoe_load(ctx, &fmConfig);
