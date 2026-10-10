@@ -9,6 +9,19 @@ enum CloudSettings {
     static let enabledKey = "cloudEnabled"
     static let modelKey = "cloudModel"
     static let defaultModel = "nvidia/nemotron-3-super-120b-a12b"
+    static let baseURLKey = "cloudBaseURL"
+    static let defaultBaseURL = "https://integrate.api.nvidia.com/v1"
+
+    /// OpenAI-compatible base URL (ends in /v1). Defaults to NVIDIA. Point it at your own
+    /// server (for example llama-server on a PC) to use a private model.
+    static var baseURL: String {
+        var u = (UserDefaults.standard.string(forKey: baseURLKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        while u.hasSuffix("/") { u.removeLast() }
+        return u.isEmpty ? defaultBaseURL : u
+    }
+
+    /// True while the server is NVIDIA's (an API key is required there).
+    static var usesNVIDIA: Bool { baseURL.lowercased().contains("nvidia.com") }
 
     private static let service = "privateagent.nvidia.apikey"
     private static let account = "default"
@@ -20,7 +33,7 @@ enum CloudSettings {
         return m.trimmingCharacters(in: .whitespaces).isEmpty ? defaultModel : m.trimmingCharacters(in: .whitespaces)
     }
 
-    static var isActive: Bool { isEnabled && !(apiKey ?? "").isEmpty }
+    static var isActive: Bool { isEnabled && (!usesNVIDIA || !(apiKey ?? "").isEmpty) }
 
     private static func baseQuery() -> [String: Any] {
         [
@@ -88,13 +101,13 @@ enum CloudError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .badResponse:
-            return "NVIDIA cloud: unexpected response."
+            return "Cloud server: unexpected response."
         case .http(let code, let body):
             switch code {
-            case 401, 403: return "NVIDIA cloud: key rejected (HTTP \(code)). Check the API key in Settings."
-            case 404: return "NVIDIA cloud: model not found (HTTP 404). Check the model name in Settings."
-            case 429: return "NVIDIA cloud: rate limit reached (HTTP 429). Wait a moment and retry."
-            default: return "NVIDIA cloud error (HTTP \(code)). \(body)"
+            case 401, 403: return "Cloud server: key rejected (HTTP \(code)). Check the API key in Settings."
+            case 404: return "Cloud server: not found (HTTP 404). Check the server URL and model name in Settings."
+            case 429: return "Cloud server: rate limit reached (HTTP 429). Wait a moment and retry."
+            default: return "Cloud server error (HTTP \(code)). \(body)"
             }
         }
     }
@@ -107,7 +120,7 @@ extension NVIDIAClient {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = 60
-        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if !apiKey.isEmpty { req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = [
             "model": model,
@@ -127,9 +140,9 @@ extension NVIDIAClient {
     }
 }
 
-/// Minimal streaming client for NVIDIA's OpenAI-compatible endpoint.
+/// Minimal streaming client for an OpenAI-compatible chat endpoint (NVIDIA by default).
 enum NVIDIAClient {
-    static let endpoint = "https://integrate.api.nvidia.com/v1/chat/completions"
+    static var endpoint: String { CloudSettings.baseURL + "/chat/completions" }
 
     static func stream(
         messages: [CloudMessage],
@@ -145,7 +158,7 @@ enum NVIDIAClient {
                     var request = URLRequest(url: url)
                     request.httpMethod = "POST"
                     request.timeoutInterval = 300
-                    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                    if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 

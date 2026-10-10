@@ -51,7 +51,7 @@ final class ChatViewModel {
 
         // Optional cloud backend (NVIDIA). Skips the on-device engine entirely.
         _ = CloudSettings.importKeyFromDocuments()
-        if CloudSettings.isEnabled && CloudSettings.apiKey == nil {
+        if CloudSettings.isEnabled && CloudSettings.usesNVIDIA && CloudSettings.apiKey == nil {
             needsCloudKey = true
             return
         }
@@ -262,7 +262,8 @@ final class ChatViewModel {
 
     /// Sends the turn to NVIDIA's cloud API instead of the on-device engine.
     private func sendCloudMessage(conversation: Conversation) {
-        guard let key = CloudSettings.apiKey, !key.isEmpty else {
+        let key = CloudSettings.apiKey ?? ""
+        if key.isEmpty && CloudSettings.usesNVIDIA {
             currentStats = "Cloud is on but no API key is saved. Add one in Settings."
             return
         }

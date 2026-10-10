@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(AssistantStylePreferences.enabledKey) private var answerStyleEnabled: Bool = true
     @AppStorage(CloudSettings.enabledKey) private var cloudEnabled: Bool = false
     @AppStorage(CloudSettings.modelKey) private var cloudModel: String = CloudSettings.defaultModel
+    @AppStorage(CloudSettings.baseURLKey) private var cloudBaseURL: String = CloudSettings.defaultBaseURL
     @State private var apiKeyDraft: String = ""
     @State private var keySaved: Bool = CloudSettings.apiKey != nil
     @State private var testResult: String = ""
@@ -36,8 +37,8 @@ struct SettingsView: View {
                 Text("Answers lead with the result, use numbered steps for things you need to do, and only say \"done\" when it was verified. Applies to the on-device model, NVIDIA cloud, and Agent Mode summaries.")
             }
             Section {
-                Toggle("Use NVIDIA cloud", isOn: $cloudEnabled)
-                SecureField("NVIDIA API key (nvapi-...)", text: $apiKeyDraft)
+                Toggle("Use cloud / private server", isOn: $cloudEnabled)
+                SecureField("API key (optional for your own server)", text: $apiKeyDraft)
                     .autocorrectionDisabled()
                 Button("Save key") {
                     CloudSettings.setAPIKey(apiKeyDraft)
@@ -45,11 +46,30 @@ struct SettingsView: View {
                     apiKeyDraft = ""
                 }
                 .disabled(apiKeyDraft.isEmpty)
+                TextField("Server URL (ends in /v1)", text: $cloudBaseURL)
+                    .autocorrectionDisabled()
+                #if os(iOS)
+                    .textInputAutocapitalization(.never) // cross-platform-check: allow
+                    .keyboardType(.URL)
+                #endif
                 TextField("Model", text: $cloudModel)
                     .autocorrectionDisabled()
                 #if os(iOS)
                     .textInputAutocapitalization(.never) // cross-platform-check: allow
                 #endif
+                if !keySaved {
+                    Button("Test connection") {
+                        testResult = "Testing..."
+                        let m = CloudSettings.model
+                        Task {
+                            let r = await NVIDIAClient.ping(model: m, apiKey: CloudSettings.apiKey ?? "")
+                            testResult = "\(m): \(r)"
+                        }
+                    }
+                    if !testResult.isEmpty {
+                        Text(testResult).font(.footnote)
+                    }
+                }
                 if keySaved {
                     Text("A key is saved in the Keychain.")
                         .foregroundStyle(.secondary)
@@ -74,9 +94,9 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Cloud (NVIDIA)")
+                Text("Cloud / private server")
             } footer: {
-                Text("When on, your messages are sent to NVIDIA's servers. Turn it off to stay fully offline.")
+                Text("When on, your messages go to the server URL above (NVIDIA by default, or your own PC). Turn it off to stay fully on-device.")
             }
             Section("About") {
                 LabeledContent("App", value: "Str8ZeRO")
