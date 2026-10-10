@@ -97,6 +97,7 @@ int pa_session_load_model(PA_Session *session, const PA_ModelDesc *desc, uint64_
     }
 
     FlashMoEConfig fmConfig = {0};
+    { const char *hm = getenv("HOME"); if (hm) { char lp[1024]; snprintf(lp, sizeof lp, "%s/Documents/engine.log", hm); if (freopen(lp, "a", stderr)) { setvbuf(stderr, NULL, _IOLBF, 0); fprintf(stderr, "\n=== load %s ===\n", desc->model_dir); } } } /* DIAG: engine log to Documents */
     fmConfig.model_path = desc->model_dir;
     fmConfig.max_context = (int)session->memory_budget.max_context_length;
     fmConfig.think_budget = 1;    // near-zero fallback — primary control is /no_think in system prompt
@@ -108,7 +109,7 @@ int pa_session_load_model(PA_Session *session, const PA_ModelDesc *desc, uint64_
     // TODO: modify engine batched path to support experts, then re-enable.
     fmConfig.prefill_batch = 0;
     fmConfig.prefill_skip_experts = 0;
-    fmConfig.verbose = 0;
+    fmConfig.verbose = 1;
 
     // Expert RAM cache: whatever is left after resident working set and a
     // safety reserve, capped. The engine rejects budgets below one token cycle.
