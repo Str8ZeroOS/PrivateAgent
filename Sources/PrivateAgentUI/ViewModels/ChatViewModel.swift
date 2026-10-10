@@ -49,6 +49,9 @@ final class ChatViewModel {
         guard !inputText.isEmpty, !isGenerating else { return }
         guard let conversation else { return }
 
+        // "remember that ..." saves to the visible memory list (Settings > Memory).
+        MemoryStore.captureIfRequested(inputText)
+
         // Optional cloud backend (NVIDIA). Skips the on-device engine entirely.
         _ = CloudSettings.importKeyFromDocuments()
         if CloudSettings.isEnabled && CloudSettings.usesNVIDIA && CloudSettings.apiKey == nil {
@@ -165,7 +168,7 @@ final class ChatViewModel {
             print("[CHAT] Using full generate (independent question), system prompt only")
             // Same system prompt + answer style guide as the cloud provider.
             let chatMessages = Self.onDeviceMessages(
-                systemPrompt: conversation.systemPrompt,
+                systemPrompt: MemoryStore.augmented(conversation.systemPrompt),
                 userText: text,
                 styleEnabled: AssistantStylePreferences.isEnabled()
             )
@@ -274,7 +277,7 @@ final class ChatViewModel {
         // prompt carries the same answer style guide as the on-device engine.
         let prior = sortedMessages.filter { !$0.content.isEmpty }
         let wire = Self.cloudMessages(
-            systemPrompt: conversation.systemPrompt,
+            systemPrompt: MemoryStore.augmented(conversation.systemPrompt),
             history: prior.map { AssistantChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.content) },
             userText: text,
             styleEnabled: AssistantStylePreferences.isEnabled()

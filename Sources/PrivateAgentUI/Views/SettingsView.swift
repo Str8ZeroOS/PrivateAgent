@@ -9,6 +9,9 @@ struct SettingsView: View {
     @AppStorage(CloudSettings.enabledKey) private var cloudEnabled: Bool = false
     @AppStorage(CloudSettings.modelKey) private var cloudModel: String = CloudSettings.defaultModel
     @AppStorage(CloudSettings.baseURLKey) private var cloudBaseURL: String = CloudSettings.defaultBaseURL
+    @AppStorage(MemoryStore.enabledKey) private var memoryEnabled: Bool = true
+    @State private var memories: [MemoryEntry] = MemoryStore.entries
+    @State private var newMemory: String = ""
     @State private var apiKeyDraft: String = ""
     @State private var keySaved: Bool = CloudSettings.apiKey != nil
     @State private var testResult: String = ""
@@ -99,7 +102,35 @@ struct SettingsView: View {
             } footer: {
                 Text("When on, your messages go to the server URL above (NVIDIA by default, or your own PC). Turn it off to stay fully on-device.")
             }
-            Section("About") {
+            Section {
+                Toggle("Use memory in chats", isOn: $memoryEnabled)
+                ForEach(memories) { m in
+                    Text(m.text)
+                }
+                .onDelete { offsets in
+                    MemoryStore.remove(at: offsets)
+                    memories = MemoryStore.entries
+                }
+                HStack {
+                    TextField("Add something to remember", text: $newMemory)
+                    Button("Add") {
+                        MemoryStore.add(newMemory)
+                        newMemory = ""
+                        memories = MemoryStore.entries
+                    }
+                    .disabled(newMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if !memories.isEmpty {
+                    Button("Clear all memories", role: .destructive) {
+                        MemoryStore.clear()
+                        memories = []
+                    }
+                }
+            } header: {
+                Text("Memory")
+            } footer: {
+                Text("Say \"remember that ...\" in any chat, or add items here. Saved items are added to every conversation. With a cloud or private server on, they are sent to it with your messages. Never save passwords or API keys.")
+            }            Section("About") {
                 LabeledContent("App", value: "Str8ZeRO")
                 LabeledContent("Version", value: "0.1.0")
                 Link("GitHub", destination: URL(string: "https://github.com")!)
@@ -117,6 +148,7 @@ struct SettingsView: View {
         )
         .onAppear {
             if CloudSettings.importKeyFromDocuments() { cloudEnabled = true }
+            memories = MemoryStore.entries
             keySaved = CloudSettings.apiKey != nil
         }
     }
