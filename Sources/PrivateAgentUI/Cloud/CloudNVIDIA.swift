@@ -5,6 +5,14 @@ import CryptoKit
 /// Settings for the optional NVIDIA cloud backend.
 /// The API key is stored in the Keychain only. It is never written to source,
 /// UserDefaults, or logs.
+/// One saved server: a name, an OpenAI-compatible base URL and a model name.
+struct CloudProfile: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var name: String
+    var baseURL: String
+    var model: String
+}
+
 enum CloudSettings {
     static let enabledKey = "cloudEnabled"
     static let modelKey = "cloudModel"
@@ -15,13 +23,54 @@ enum CloudSettings {
     /// OpenAI-compatible base URL (ends in /v1). Defaults to NVIDIA. Point it at your own
     /// server (for example llama-server on a PC) to use a private model.
     static var baseURL: String {
-        var u = (UserDefaults.standard.string(forKey: baseURLKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var u = selected.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while u.hasSuffix("/") { u.removeLast() }
         return u.isEmpty ? defaultBaseURL : u
     }
 
     /// True while the server is NVIDIA's (an API key is required there).
     static var usesNVIDIA: Bool { baseURL.lowercased().contains("nvidia.com") }
+
+    // MARK: Saved servers (pick one in Settings or from the chat title)
+    static let profilesKey = "cloudProfiles"
+    static let selectedKey = "cloudSelectedProfile"
+
+    static var profiles: [CloudProfile] {
+        if let data = UserDefaults.standard.data(forKey: profilesKey),
+           let list = try? JSONDecoder().decode([CloudProfile].self, from: data), !list.isEmpty {
+            return list
+        }
+        return seedProfiles()
+    }
+
+    static func saveProfiles(_ list: [CloudProfile]) {
+        if let data = try? JSONEncoder().encode(list) {
+            UserDefaults.standard.set(data, forKey: profilesKey)
+        }
+    }
+
+    static var selected: CloudProfile {
+        let list = profiles
+        let id = UserDefaults.standard.string(forKey: selectedKey) ?? ""
+        return list.first(where: { $0.id.uuidString == id }) ?? list[0]
+    }
+
+    /// First run: NVIDIA is always present. A custom server saved by an earlier version is kept as "My laptop".
+    private static func seedProfiles() -> [CloudProfile] {
+        let d = UserDefaults.standard
+        let oldURL = (d.string(forKey: baseURLKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let oldModel = (d.string(forKey: modelKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let oldIsNVIDIA = oldURL.isEmpty || oldURL.lowercased().contains("nvidia.com")
+        var list = [CloudProfile(name: "NVIDIA cloud", baseURL: defaultBaseURL,
+                                 model: (oldIsNVIDIA && !oldModel.isEmpty) ? oldModel : defaultModel)]
+        if !oldIsNVIDIA {
+            let mine = CloudProfile(name: "My laptop", baseURL: oldURL, model: oldModel)
+            list.append(mine)
+            d.set(mine.id.uuidString, forKey: selectedKey)
+        }
+        saveProfiles(list)
+        return list
+    }
 
     private static let service = "privateagent.nvidia.apikey"
     /// NVIDIA keeps the original Keychain slot. Every other server gets its own slot
@@ -34,7 +83,7 @@ enum CloudSettings {
     static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
 
     static var model: String {
-        let m = UserDefaults.standard.string(forKey: modelKey) ?? ""
+        let m = selected.model
         return m.trimmingCharacters(in: .whitespaces).isEmpty ? defaultModel : m.trimmingCharacters(in: .whitespaces)
     }
 

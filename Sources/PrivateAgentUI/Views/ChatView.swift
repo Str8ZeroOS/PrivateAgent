@@ -127,11 +127,7 @@ struct ChatView: View {
                 VStack(spacing: 1) {
                     Text(viewModel.conversation?.title ?? "Chat")
                         .font(.headline)
-                    if let name = engine.modelInfo?.name {
-                        Text(name)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    ServerSwitcher(onDeviceName: engine.modelInfo?.name)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) { // cross-platform-check: allow

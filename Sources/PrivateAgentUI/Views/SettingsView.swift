@@ -7,8 +7,8 @@ struct SettingsView: View {
     @AppStorage("defaultSystemPrompt") private var systemPrompt: String = "You are a helpful assistant."
     @AppStorage(AssistantStylePreferences.enabledKey) private var answerStyleEnabled: Bool = true
     @AppStorage(CloudSettings.enabledKey) private var cloudEnabled: Bool = false
-    @AppStorage(CloudSettings.modelKey) private var cloudModel: String = CloudSettings.defaultModel
-    @AppStorage(CloudSettings.baseURLKey) private var cloudBaseURL: String = CloudSettings.defaultBaseURL
+    @AppStorage(CloudSettings.selectedKey) private var selectedID: String = ""
+    @State private var profiles: [CloudProfile] = CloudSettings.profiles
     @AppStorage(MemoryStore.enabledKey) private var memoryEnabled: Bool = true
     @State private var memories: [MemoryEntry] = MemoryStore.entries
     @State private var newMemory: String = ""
@@ -16,6 +16,30 @@ struct SettingsView: View {
     @State private var keySaved: Bool = CloudSettings.apiKey != nil
     @State private var testResult: String = ""
 
+    private enum ProfileField { case name, baseURL, model }
+
+    private func profileBinding(_ field: ProfileField) -> Binding<String> {
+        Binding(
+            get: {
+                guard let p = profiles.first(where: { $0.id.uuidString == selectedID }) else { return "" }
+                switch field {
+                case .name: return p.name
+                case .baseURL: return p.baseURL
+                case .model: return p.model
+                }
+            },
+            set: { value in
+                guard let i = profiles.firstIndex(where: { $0.id.uuidString == selectedID }) else { return }
+                switch field {
+                case .name: profiles[i].name = value
+                case .baseURL: profiles[i].baseURL = value
+                case .model: profiles[i].model = value
+                }
+                CloudSettings.saveProfiles(profiles)
+                keySaved = CloudSettings.apiKey != nil
+            }
+        )
+    }
     var body: some View {
         Form {
             Section("Generation") {
@@ -49,18 +73,41 @@ struct SettingsView: View {
                     apiKeyDraft = ""
                 }
                 .disabled(apiKeyDraft.isEmpty)
-                TextField("Server URL (ends in /v1)", text: $cloudBaseURL)
+                Picker("Server", selection: $selectedID) {
+                    ForEach(profiles) { p in
+                        Text(p.name).tag(p.id.uuidString)
+                    }
+                }
+                .onChange(of: selectedID) {
+                    keySaved = CloudSettings.apiKey != nil
+                    testResult = ""
+                }
+                TextField("Name", text: profileBinding(.name))
+                TextField("Server URL (ends in /v1)", text: profileBinding(.baseURL))
                     .autocorrectionDisabled()
-                    .onChange(of: cloudBaseURL) { keySaved = CloudSettings.apiKey != nil }
                 #if os(iOS)
                     .textInputAutocapitalization(.never) // cross-platform-check: allow
                     .keyboardType(.URL) // cross-platform-check: allow
                 #endif
-                TextField("Model", text: $cloudModel)
+                TextField("Model", text: profileBinding(.model))
                     .autocorrectionDisabled()
                 #if os(iOS)
                     .textInputAutocapitalization(.never) // cross-platform-check: allow
                 #endif
+                Button("Add another server") {
+                    let p = CloudProfile(name: "New server", baseURL: "http://", model: "")
+                    profiles.append(p)
+                    CloudSettings.saveProfiles(profiles)
+                    selectedID = p.id.uuidString
+                }
+                if profiles.count > 1 {
+                    Button("Delete this server", role: .destructive) {
+                        profiles.removeAll { $0.id.uuidString == selectedID }
+                        CloudSettings.saveProfiles(profiles)
+                        selectedID = profiles[0].id.uuidString
+                    }
+                }
+
                 if !keySaved {
                     Button("Test connection") {
                         testResult = "Testing..."
@@ -150,6 +197,9 @@ struct SettingsView: View {
         .onAppear {
             if CloudSettings.importKeyFromDocuments() { cloudEnabled = true }
             memories = MemoryStore.entries
+            if !profiles.contains(where: { $0.id.uuidString == selectedID }) {
+                selectedID = CloudSettings.selected.id.uuidString
+            }
             keySaved = CloudSettings.apiKey != nil
         }
     }
