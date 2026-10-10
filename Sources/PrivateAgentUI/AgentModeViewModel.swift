@@ -280,7 +280,7 @@ public final class AgentModeViewModel {
                 let generator = PrivateAgentEngineTextGenerator(engine: engine)
                 let planner = LLMAgentPlanner(
                     generator: generator,
-                    promptCompiler: AgentPromptCompiler(answerStyleEnabled: AssistantStylePreferences.isEnabled())
+                    promptCompiler: AgentPromptCompiler(systemPrompt: MemoryStore.augmented(AgentSystemPrompt.balanced), answerStyleEnabled: AssistantStylePreferences.isEnabled())
                 )
                 let result = try await planner.makePlanWithDiagnostics(for: observation, allowedModes: allowedModes)
                 plan = result.plan
@@ -329,7 +329,7 @@ public final class AgentModeViewModel {
             }
             planner = LLMAgentPlanner(
                 generator: PrivateAgentEngineTextGenerator(engine: engine),
-                promptCompiler: AgentPromptCompiler(answerStyleEnabled: AssistantStylePreferences.isEnabled()),
+                promptCompiler: AgentPromptCompiler(systemPrompt: MemoryStore.augmented(AgentSystemPrompt.balanced), answerStyleEnabled: AssistantStylePreferences.isEnabled()),
                 maxRepairAttempts: AgentLoopLimits.default.maxJSONRepairAttempts
             )
         }
