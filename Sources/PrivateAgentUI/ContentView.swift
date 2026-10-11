@@ -13,18 +13,24 @@ public struct ContentView: View {
 
     public var body: some View {
         @Bindable var router = router
-        NavigationStack(path: $path) {
-            ConversationListView(path: $path)
-                .navigationDestination(for: UUID.self) { conversationId in
-                    ChatView(conversationId: conversationId)
-                }
-                .toolbar {
-                    ToolbarItem {
-                        Button("Agent") {
-                            router.open(.agentMode)
-                        }
+        TabView {
+            NavigationStack(path: $path) {
+                ConversationListView(path: $path)
+                    .navigationDestination(for: UUID.self) { conversationId in
+                        ChatView(conversationId: conversationId)
                     }
-                }
+            }
+            .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
+
+            NavigationStack {
+                AssistantView()
+            }
+            .tabItem { Label("Assistant", systemImage: "sparkles") }
+
+            NavigationStack {
+                ConnectionsView()
+            }
+            .tabItem { Label("Connections", systemImage: "network") }
         }
         .sheet(isPresented: $router.isAgentModePresented) {
             NavigationStack {
