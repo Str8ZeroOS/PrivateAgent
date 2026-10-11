@@ -23,7 +23,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate {
         let href: String
     }
 
-    struct Observation: Sendable {
+    struct PageSnapshot: Sendable {
         let url: String
         let title: String
         let text: String
@@ -118,11 +118,11 @@ final class BrowserSession: NSObject, WKNavigationDelegate {
         return submit ? "Typed into [\(index)] and submitted." : "Typed into [\(index)]."
     }
 
-    func observe() async -> Observation {
+    func observe() async -> PageSnapshot {
         let raw = (try? await webView.evaluateJavaScript(Self.observeJS)) as? String
         guard let raw, let data = raw.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return Observation(url: currentURL, title: title, text: "(blank page)", elements: [], scrollY: 0, height: 0)
+            return PageSnapshot(url: currentURL, title: title, text: "(blank page)", elements: [], scrollY: 0, height: 0)
         }
         var els: [Element] = []
         for item in (obj["items"] as? [[String: Any]]) ?? [] {
@@ -134,7 +134,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate {
                 href: (item["href"] as? String) ?? ""
             ))
         }
-        return Observation(
+        return PageSnapshot(
             url: (obj["url"] as? String) ?? currentURL,
             title: (obj["title"] as? String) ?? title,
             text: (obj["text"] as? String) ?? "",

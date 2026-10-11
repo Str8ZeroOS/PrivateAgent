@@ -127,7 +127,7 @@ final class BrowserAgent {
         case finished(String)
     }
 
-    private func perform(_ a: BrowserAction, obs: BrowserSession.Observation) async -> Outcome {
+    private func perform(_ a: BrowserAction, obs: BrowserSession.PageSnapshot) async -> Outcome {
         switch a.action {
         case "goto":
             guard let url = a.url, !url.isEmpty else { return .continued("No address given.") }
@@ -262,7 +262,7 @@ final class BrowserAgent {
     - If you are stuck or need information only the user has, use ask.
     """
 
-    static func userPrompt(goal: String, obs: BrowserSession.Observation, history: [String], step: Int, maxSteps: Int) -> String {
+    static func userPrompt(goal: String, obs: BrowserSession.PageSnapshot, history: [String], step: Int, maxSteps: Int) -> String {
         var s = "TASK: \(goal)\n\nSTEP \(step) of \(maxSteps)\n"
         if !history.isEmpty {
             s += "\nPREVIOUS ACTIONS:\n" + history.suffix(8).map { "- " + $0 }.joined(separator: "\n") + "\n"
