@@ -79,6 +79,7 @@ final class BrowserAgent {
         let model = profile.model.isEmpty ? CloudSettings.defaultModel : profile.model
         note("sparkles", "Using \(profile.name) \u{00B7} \(model)")
         var history: [String] = []
+        var nudged = false
 
         for step in 1...maxSteps {
             if Task.isCancelled { return }
@@ -86,8 +87,15 @@ final class BrowserAgent {
             let user = Self.userPrompt(goal: goal, obs: obs, history: history, step: step, maxSteps: maxSteps)
             guard let reply = await ask(user: user, model: model, apiKey: apiKey) else { return }
             guard let action = Self.parse(reply) else {
+                note("text.bubble", "Model replied: " + String(reply.prefix(140)))
                 history.append("Step \(step): your reply was not a single valid JSON object. Reply with exactly one JSON object.")
                 note("exclamationmark.triangle", "The model's reply was not a valid action. Trying again.")
+                continue
+            }
+            if action.action == "done", history.isEmpty, !nudged, Self.looksLikeRefusal(action.answer ?? "") {
+                nudged = true
+                history.append("Step \(step): you said you cannot browse. That is wrong: you control a real browser with the actions listed. Do not refuse. Start with goto.")
+                note("arrow.triangle.2.circlepath", "The model refused without trying. Reminding it that it has a browser.")
                 continue
             }
             let outcome = await perform(action, obs: obs)
@@ -244,6 +252,10 @@ final class BrowserAgent {
     Each turn you see the current page (URL, title, visible text, and a numbered list of clickable or typeable elements) \
     and you answer with exactly one JSON object and nothing else.
 
+    You DO have a working browser: the actions below control it. Never say you cannot browse or have no browsing ability; start with goto.
+    Example first reply for the task "find the price of a 20 amp GFCI outlet":
+    {"action":"goto","url":"https://duckduckgo.com/html/?q=20+amp+GFCI+outlet+price","reason":"search the web"}
+
     Actions:
     {"action":"goto","url":"https://...","reason":"..."}
     {"action":"click","index":N,"reason":"..."}
@@ -303,6 +315,11 @@ final class BrowserAgent {
             submit: (obj["submit"] as? Bool) ?? false,
             reason: obj["reason"] as? String
         )
+    }
+
+    static func looksLikeRefusal(_ text: String) -> Bool {
+        let s = text.lowercased()
+        return ["cannot", "can't", "don't have", "do not have", "unable", "not able", "no browsing"].contains { s.contains($0) }
     }
 
     static func describe(_ a: BrowserAction) -> String {
